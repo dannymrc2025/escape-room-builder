@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus, Search, LogOut, MapPin, Layers, Calendar,
-  MoreVertical, Edit, BarChart2, Copy, Archive,
+  MoreVertical, Edit, BarChart2, Copy, Archive, Trash2,
   Play, Square, Lock, X, ClipboardCopy, Check
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -28,7 +28,7 @@ function BadgeEstado({ estado }) {
   )
 }
 
-function MenuAcciones({ room, onActivar, onDesactivar, onEditar, onResultados, onDuplicar, onArchivar }) {
+function MenuAcciones({ room, onActivar, onDesactivar, onEditar, onResultados, onDuplicar, onArchivar, onEliminar }) {
   const [open, setOpen] = useState(false)
 
   const items = [
@@ -39,6 +39,7 @@ function MenuAcciones({ room, onActivar, onDesactivar, onEditar, onResultados, o
     { label: 'Ver resultados', icon: <BarChart2 className="w-4 h-4" />, action: onResultados },
     { label: 'Duplicar', icon: <Copy className="w-4 h-4" />, action: onDuplicar },
     { label: 'Archivar', icon: <Archive className="w-4 h-4" />, action: onArchivar, danger: true },
+    { label: 'Eliminar', icon: <Trash2 className="w-4 h-4" />, action: onEliminar, danger: true },
   ]
 
   return (
@@ -125,7 +126,6 @@ export default function Dashboard() {
     const { data, error } = await supabase
       .from('escape_rooms')
       .select('*')
-      .order('created_at', { ascending: false })
     console.log('fetchRooms:', data, error)
     if (error) {
       setErrorFetch(`DB Error: ${error.message} | code: ${error.code} | hint: ${error.hint}`)
@@ -183,6 +183,13 @@ export default function Dashboard() {
 
   const handleArchivar = async (room) => {
     await supabase.from('escape_rooms').update({ archivado: true }).eq('id', room.id)
+    fetchRooms()
+  }
+
+  const handleEliminar = async (room) => {
+    if (!window.confirm(`¿Eliminar "${room.nombre}" permanentemente? Esta acción no se puede deshacer.`)) return
+    await supabase.from('estaciones').delete().eq('escape_room_id', room.id)
+    await supabase.from('escape_rooms').delete().eq('id', room.id)
     fetchRooms()
   }
 
@@ -307,6 +314,7 @@ export default function Dashboard() {
                     onResultados={() => navigate(`/resultados/${room.id}`)}
                     onDuplicar={() => handleDuplicar(room)}
                     onArchivar={() => handleArchivar(room)}
+                    onEliminar={() => handleEliminar(room)}
                   />
                 </div>
 

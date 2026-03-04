@@ -214,69 +214,66 @@ function Paso2({ datos, setDatos }) {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-bold text-gray-800 mb-1">Historia con IA</h2>
-        <p className="text-sm text-gray-500">Elige el tono narrativo y genera la historia de introducción.</p>
+        <h2 className="text-xl font-bold text-gray-800 mb-1">Historia de introducción</h2>
+        <p className="text-sm text-gray-500">Escribe la historia manualmente o genera una con IA. Este paso es opcional.</p>
+      </div>
+
+      {/* Textarea siempre visible */}
+      <div className="space-y-2">
+        <p className="text-sm font-semibold text-gray-700 flex items-center gap-1">
+          <BookOpen className="w-4 h-4 text-violet-500" /> Historia
+        </p>
+        <textarea
+          value={datos.historia}
+          onChange={(e) => setHistoria(e.target.value)}
+          rows={6}
+          placeholder="Escribe aquí la historia de introducción... (opcional)"
+          className="w-full border border-gray-200 bg-white rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-300 transition leading-relaxed"
+        />
+        <p className="text-xs text-gray-400">Puedes escribirla manualmente o usar la IA para generarla.</p>
       </div>
 
       {/* Selector de tono */}
-      <div>
-        <p className="text-sm font-semibold text-gray-700 mb-3">Tono de la historia</p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {TONOS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTono(t.id)}
-              className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all cursor-pointer font-medium text-sm ${
-                datos.tono === t.id
-                  ? `${t.bg} ${t.color} border-current shadow-sm scale-105`
-                  : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300 hover:bg-gray-50'
-              }`}
-            >
-              <span className={datos.tono === t.id ? t.color : 'text-gray-400'}>{t.icon}</span>
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <details className="group">
+        <summary className="cursor-pointer text-sm font-semibold text-violet-600 hover:text-violet-500 flex items-center gap-1 list-none">
+          <Wand2 className="w-4 h-4" /> Generar con IA (opcional)
+        </summary>
+        <div className="mt-4 space-y-4 pl-1">
+          <div>
+            <p className="text-sm font-medium text-gray-700 mb-3">Elige un tono</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {TONOS.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setTono(t.id)}
+                  className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all cursor-pointer font-medium text-sm ${
+                    datos.tono === t.id
+                      ? `${t.bg} ${t.color} border-current shadow-sm scale-105`
+                      : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <span className={datos.tono === t.id ? t.color : 'text-gray-400'}>{t.icon}</span>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-      {/* Botón generar */}
-      <button
-        onClick={generarHistoria}
-        disabled={generando || !datos.tono}
-        className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 disabled:bg-gray-300 text-white font-semibold px-5 py-2.5 rounded-xl transition shadow-sm disabled:cursor-not-allowed"
-      >
-        {generando
-          ? <><Loader2 className="w-4 h-4 animate-spin" /> Generando historia...</>
-          : <><Wand2 className="w-4 h-4" /> Generar historia con IA</>
-        }
-      </button>
+          <button
+            onClick={generarHistoria}
+            disabled={generando || !datos.tono}
+            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 disabled:bg-gray-300 text-white font-semibold px-5 py-2.5 rounded-xl transition shadow-sm disabled:cursor-not-allowed"
+          >
+            {generando
+              ? <><Loader2 className="w-4 h-4 animate-spin" /> Generando historia...</>
+              : <><Wand2 className="w-4 h-4" /> Generar historia con IA</>
+            }
+          </button>
+          {!datos.tono && <p className="text-xs text-gray-400">Selecciona un tono para habilitar la generación.</p>}
+        </div>
+      </details>
 
       {error && <p className="text-red-500 text-sm">{error}</p>}
-
-      {/* Textarea resultado */}
-      {datos.historia && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold text-gray-700 flex items-center gap-1">
-              <BookOpen className="w-4 h-4 text-violet-500" /> Historia generada
-            </p>
-            <button
-              onClick={generarHistoria}
-              disabled={generando}
-              className="flex items-center gap-1 text-xs text-violet-600 hover:text-violet-500 border border-violet-200 hover:border-violet-400 px-3 py-1 rounded-lg transition"
-            >
-              <RefreshCw className="w-3 h-3" /> Regenerar
-            </button>
-          </div>
-          <textarea
-            value={datos.historia}
-            onChange={(e) => setHistoria(e.target.value)}
-            rows={6}
-            className="w-full border border-violet-200 bg-violet-50/40 rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-300 transition leading-relaxed"
-          />
-          <p className="text-xs text-gray-400">Puedes editar la historia directamente en el cuadro de texto.</p>
-        </div>
-      )}
     </div>
   )
 }
