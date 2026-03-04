@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Plus, Search, LogOut, MapPin, Layers, Calendar,
   MoreVertical, Edit, BarChart2, Copy, Archive, Trash2,
-  Play, Square, Lock, X, ClipboardCopy, Check
+  Play, Square, Lock, X, ClipboardCopy, Check, Users, Activity
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 
@@ -117,8 +117,10 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [busqueda, setBusqueda] = useState('')
   const [filtroEstado, setFiltroEstado] = useState('Todos')
-  const [modalCodigo, setModalCodigo] = useState(null) // string | null
+  const [modalCodigo, setModalCodigo] = useState(null)
   const [errorFetch, setErrorFetch] = useState('')
+  const [equiposCounts, setEquiposCounts] = useState({}) // roomId -> count
+  const [sesionesMap, setSesionesMap] = useState({}) // roomId -> sesionId
 
   const fetchRooms = async () => {
     setLoading(true)
@@ -126,11 +128,40 @@ export default function Dashboard() {
     const { data, error } = await supabase
       .from('escape_rooms')
       .select('*')
-    console.log('fetchRooms:', data, error)
     if (error) {
       setErrorFetch(`DB Error: ${error.message} | code: ${error.code} | hint: ${error.hint}`)
     } else {
-      setRooms((data ?? []).filter(r => !r.archivado))
+      const filtered = (data ?? []).filter(r => !r.archivado)
+      setRooms(filtered)
+
+      // Cargar sesiones activas y contar equipos para rooms "en curso"
+      const enCurso = filtered.filter(r => r.estado === 'en curso')
+      if (enCurso.length > 0) {
+        const ids = enCurso.map(r => r.id)
+        const { data: sesData } = await supabase
+          .from('sesiones')
+          .select('id, escape_room_id')
+          .in('escape_room_id', ids)
+        
+        const sesMap = {}
+        ;(sesData ?? []).forEach(s => { sesMap[s.escape_room_id] = s.id })
+        setSesionesMap(sesMap)
+
+        const sesIds = Object.values(sesMap)
+        if (sesIds.length > 0) {
+          const { data: eqData } = await supabase
+            .from('equipos')
+            .select('sesion_id')
+            .in('sesion_id', sesIds)
+          
+          const counts = {}
+          ;(eqData ?? []).forEach(eq => {
+            const roomId = Object.keys(sesMap).find(k => sesMap[k] === eq.sesion_id)
+            if (roomId) counts[roomId] = (counts[roomId] ?? 0) + 1
+          })
+          setEquiposCounts(counts)
+        }
+      }
     }
     setLoading(false)
   }
@@ -157,11 +188,25 @@ export default function Dashboard() {
       .from('sesiones')
       .select('codigo_sala')
       .eq('escape_room_id', room.id)
-      .eq('estado', 'activo')
       .limit(1)
-    const codigo = data?.[0]?.codigo_sala
-    if (codigo) setModalCodigo(codigo)
-    else alert('No se encontró el código de sala. Desactiva y vuelve a activar el escape room.')
+    
+    if (data?.[0]?.codigo_sala) {
+      setModalCodigo(data[0].codigo_sala)
+      return
+    }
+
+    // No hay sesión — crear una nueva
+    const codigo = genCodigo()
+    const { error } = await supabase.from('sesiones').insert({
+      escape_room_id: room.id,
+      codigo_sala: codigo,
+      estado: 'activo',
+    })
+    if (error) { 
+      alert(`Error sesión: ${error.message} | código: ${error.code}`)
+      return 
+    }
+    setModalCodigo(codigo)
   }
 
   const handleActivar = async (room) => {
@@ -170,13 +215,17 @@ export default function Dashboard() {
       .from('escape_rooms')
       .update({ estado: 'activo' })
       .eq('id', room.id)
-    if (errRoom) { console.error(errRoom); return }
+    if (errRoom) { console.error('Error activar room:', errRoom); return }
 
-    await supabase.from('sesiones').insert({
-      escape_room_id: room.id,
-      codigo_sala: codigo,
-      estado: 'activo',
-    })
+    const { data: sesData, error: errSes } = await supabase
+      .from('sesiones')
+      .insert({
+        escape_room_id: room.id,
+        codigo_sala: codigo,
+        estado: 'activo',
+      })
+      .select()
+    console.log('Sesion insertada:', sesData, errSes)
 
     setModalCodigo(codigo)
     fetchRooms()
@@ -184,6 +233,7 @@ export default function Dashboard() {
 
   const handleDesactivar = async (room) => {
     await supabase.from('escape_rooms').update({ estado: 'inactivo' }).eq('id', room.id)
+    await supabase.from('sesiones').update({ estado: 'cerrada' }).eq('escape_room_id', room.id).eq('estado', 'activo')
     fetchRooms()
   }
 
@@ -361,6 +411,28 @@ export default function Dashboard() {
                   >
                     <ClipboardCopy className="w-3.5 h-3.5" /> Ver código de sala
                   </button>
+                )}
+
+                {/* Panel "en curso" */}
+                {room.estado === 'en curso' && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 flex flex-col gap-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="flex items-center gap-1 font-semibold text-yellow-700">
+                        <Activity className="w-3.5 h-3.5" /> Partida en vivo
+                      </span>
+                      <span className="flex items-center gap-1 text-yellow-600">
+                        <Users className="w-3.5 h-3.5" />
+                        {equiposCounts[room.id] ?? 0} equipo{equiposCounts[room.id] !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => navigate(`/monitor/${sesionesMap[room.id]}`)}
+                      disabled={!sesionesMap[room.id]}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-yellow-700 hover:text-yellow-600 bg-yellow-100 hover:bg-yellow-200 px-3 py-1.5 rounded-lg transition w-full justify-center disabled:opacity-50"
+                    >
+                      <Activity className="w-3.5 h-3.5" /> Abrir Monitor
+                    </button>
+                  </div>
                 )}
 
                 {/* Fecha */}

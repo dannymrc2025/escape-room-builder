@@ -77,23 +77,33 @@ function PantallaEntrada({ estadoInicial, onUnirse }) {
     }
     setCargando(true)
     setError('')
-    const { data: ses } = await supabase
+    const { data: ses, error: errSes } = await supabase
       .from('sesiones')
-      .select('*, escape_rooms(*)')
+      .select('*')
       .eq('codigo_sala', codigo.trim())
-      .eq('estado', 'activo')
-      .single()
+      .limit(1)
 
-    if (!ses) {
+    const sesion = ses?.[0]
+    console.log('sesion encontrada:', sesion, errSes)
+
+    if (!sesion) {
       setError('Código de sala inválido o la sesión no está activa.')
       setCargando(false)
       return
     }
 
+    // Obtener escape room por separado
+    const { data: er } = await supabase
+      .from('escape_rooms')
+      .select('*')
+      .eq('id', sesion.escape_room_id)
+      .single()
+    sesion.escape_rooms = er
+
     const { data: eq, error: errEq } = await supabase
       .from('equipos')
       .insert({
-        sesion_id: ses.id,
+        sesion_id: sesion.id,
         nombre: nombre.trim(),
         estacion_actual: 1,
         estaciones_resueltas: 0,
@@ -103,13 +113,21 @@ function PantallaEntrada({ estadoInicial, onUnirse }) {
       .single()
 
     if (errEq || !eq) {
+      console.error('Error equipos:', errEq)
       setError('No se pudo unir. Intenta de nuevo.')
       setCargando(false)
       return
     }
 
     sessionStorage.setItem('escape_equipo', JSON.stringify(eq))
-    onUnirse(ses, eq)
+
+    // Marcar escape room como "en curso"
+    await supabase
+      .from('escape_rooms')
+      .update({ estado: 'en curso' })
+      .eq('id', sesion.escape_room_id)
+
+    onUnirse(sesion, eq)
   }
 
   return (
@@ -580,16 +598,24 @@ export default function Jugar() {
   }, [codigoSala]) // eslint-disable-line
 
   const cargarSesion = async () => {
-    const { data: ses } = await supabase
+    const { data: sesArr } = await supabase
       .from('sesiones')
-      .select('*, escape_rooms(*)')
+      .select('*')
       .eq('codigo_sala', codigoSala)
-      .single()
+      .limit(1)
 
+    const ses = sesArr?.[0]
     if (!ses) { navigate('/jugar'); return }
 
+    const { data: er } = await supabase
+      .from('escape_rooms')
+      .select('*')
+      .eq('id', ses.escape_room_id)
+      .single()
+
+    ses.escape_rooms = er
     setSesion(ses)
-    setEscapeRoom(ses.escape_rooms)
+    setEscapeRoom(er)
 
     const { data: ests } = await supabase
       .from('estaciones')
