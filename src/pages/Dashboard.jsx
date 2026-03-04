@@ -158,10 +158,10 @@ export default function Dashboard() {
       .select('codigo_sala')
       .eq('escape_room_id', room.id)
       .eq('estado', 'activo')
-      .order('created_at', { ascending: false })
       .limit(1)
-      .single()
-    if (data?.codigo_sala) setModalCodigo(data.codigo_sala)
+    const codigo = data?.[0]?.codigo_sala
+    if (codigo) setModalCodigo(codigo)
+    else alert('No se encontró el código de sala. Desactiva y vuelve a activar el escape room.')
   }
 
   const handleActivar = async (room) => {
