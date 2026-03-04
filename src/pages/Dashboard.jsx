@@ -32,7 +32,7 @@ function MenuAcciones({ room, onActivar, onDesactivar, onEditar, onResultados, o
   const [open, setOpen] = useState(false)
 
   const items = [
-    room.estado === 'activo'
+    (room.estado === 'activo' || room.estado === 'en curso')
       ? { label: 'Desactivar', icon: <Square className="w-4 h-4" />, action: onDesactivar }
       : { label: 'Activar', icon: <Play className="w-4 h-4" />, action: onActivar },
     { label: 'Editar', icon: <Edit className="w-4 h-4" />, action: onEditar },
@@ -178,17 +178,37 @@ export default function Dashboard() {
       setErrorFetch(`DB Error: ${error.message} | code: ${error.code} | hint: ${error.hint}`)
     } else {
       const filtered = (data ?? []).filter(r => !r.archivado)
-      setRooms(filtered)
 
-      // Cargar sesiones activas y contar equipos para rooms "en curso"
-      const enCurso = filtered.filter(r => r.estado === 'en curso')
-      if (enCurso.length > 0) {
-        const ids = enCurso.map(r => r.id)
+      // Auto-corregir rooms 'en curso' cuya sesión ya está finalizada
+      const enCursoIds = filtered.filter(r => r.estado === 'en curso').map(r => r.id)
+      if (enCursoIds.length > 0) {
+        const { data: sesCheck } = await supabase
+          .from('sesiones').select('escape_room_id, estado').in('escape_room_id', enCursoIds)
+        const sinSesionActiva = enCursoIds.filter(id => {
+          const sesDelRoom = (sesCheck ?? []).filter(s => s.escape_room_id === id)
+          return sesDelRoom.length === 0 || sesDelRoom.every(s => s.estado === 'finalizada')
+        })
+        if (sinSesionActiva.length > 0) {
+          await supabase.from('escape_rooms').update({ estado: 'inactivo' }).in('id', sinSesionActiva)
+          sinSesionActiva.forEach(id => {
+            const room = filtered.find(r => r.id === id)
+            if (room) room.estado = 'inactivo'
+          })
+        }
+      }
+
+      setRooms([...filtered])
+
+      // Cargar solo la sesión NO finalizada para rooms 'en curso'
+      const enCursoActivos = filtered.filter(r => r.estado === 'en curso')
+      if (enCursoActivos.length > 0) {
+        const ids = enCursoActivos.map(r => r.id)
         const { data: sesData } = await supabase
           .from('sesiones')
           .select('id, escape_room_id')
           .in('escape_room_id', ids)
-        
+          .neq('estado', 'finalizada')
+
         const sesMap = {}
         ;(sesData ?? []).forEach(s => { sesMap[s.escape_room_id] = s.id })
         setSesionesMap(sesMap)
@@ -199,7 +219,7 @@ export default function Dashboard() {
             .from('equipos')
             .select('sesion_id')
             .in('sesion_id', sesIds)
-          
+
           const counts = {}
           ;(eqData ?? []).forEach(eq => {
             const roomId = Object.keys(sesMap).find(k => sesMap[k] === eq.sesion_id)

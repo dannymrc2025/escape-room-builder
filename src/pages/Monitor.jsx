@@ -306,6 +306,13 @@ export default function Monitor() {
       .from('sesiones')
       .update({ estado: 'finalizada', finalizada_at: new Date().toISOString() })
       .eq('id', sesionId)
+    // Regresar el escape room a inactivo
+    if (sesion?.escape_room_id) {
+      await supabase
+        .from('escape_rooms')
+        .update({ estado: 'inactivo' })
+        .eq('id', sesion.escape_room_id)
+    }
     setFinalizando(false)
     setMostrarFinalizar(false)
     navigate(`/resultados/${sesionId}`)
