@@ -416,7 +416,14 @@ export default function Dashboard() {
                     onActivar={() => setModalActivar(room)}
                     onDesactivar={() => handleDesactivar(room)}
                     onEditar={() => navigate(`/editar/${room.id}`)}
-                    onResultados={() => navigate(`/resultados/${room.id}`)}
+                    onResultados={async () => {
+                      // Buscar sesión del escape room para navegar con el ID correcto
+                      const { data: ses } = await supabase
+                        .from('sesiones').select('id').eq('escape_room_id', room.id).limit(1)
+                      const sesId = ses?.[0]?.id
+                      if (!sesId) { alert('Este escape room aún no tiene sesiones con resultados.'); return }
+                      navigate(`/resultados/${sesId}`)
+                    }}
                     onDuplicar={() => handleDuplicar(room)}
                     onArchivar={() => handleArchivar(room)}
                     onEliminar={() => handleEliminar(room)}

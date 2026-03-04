@@ -95,28 +95,36 @@ export default function Resultados() {
 
   const cargar = async () => {
     setLoading(true)
-    const [{ data: sesData }, { data: resData }, { data: progData }] = await Promise.all([
-      supabase.from('sesiones').select('*, escape_rooms(*)').eq('id', sesionId).single(),
-      supabase.from('resultados_finales').select('*, equipos(nombre, estaciones_resueltas, intentos_totales)')
+    // Cargar sesión sin .single() para evitar 406
+    const { data: sesArr } = await supabase
+      .from('sesiones').select('*').eq('id', sesionId).limit(1)
+    const sesData = sesArr?.[0]
+
+    if (!sesData) { setError('Sesión no encontrada.'); setLoading(false); return }
+
+    // Cargar escape room por separado (el join nativo no siempre funciona)
+    const { data: erData } = await supabase
+      .from('escape_rooms').select('*').eq('id', sesData.escape_room_id).single()
+    sesData.escape_rooms = erData
+
+    // Cargar resultados y progreso en paralelo
+    const [{ data: resData }, { data: progData }] = await Promise.all([
+      supabase.from('resultados_finales')
+        .select('*, equipos(nombre, estaciones_resueltas, intentos_totales)')
         .eq('sesion_id', sesionId)
         .order('puntos_total', { ascending: false })
         .order('tiempo_total', { ascending: true }),
       supabase.from('progreso').select('*').eq('sesion_id', sesionId),
     ])
 
-    if (!sesData) { setError('Sesión no encontrada.'); setLoading(false); return }
-
     setSesion(sesData)
-    setEscapeRoom(sesData.escape_rooms)
+    setEscapeRoom(erData)
     setResultados(resData ?? [])
     setProgreso(progData ?? [])
 
-    if (sesData.escape_rooms?.id) {
+    if (erData?.id) {
       const { data: ests } = await supabase
-        .from('estaciones')
-        .select('*')
-        .eq('escape_room_id', sesData.escape_rooms.id)
-        .order('numero')
+        .from('estaciones').select('*').eq('escape_room_id', erData.id).order('numero')
       setEstaciones(ests ?? [])
     }
 
