@@ -117,15 +117,21 @@ export default function Dashboard() {
   const [busqueda, setBusqueda] = useState('')
   const [filtroEstado, setFiltroEstado] = useState('Todos')
   const [modalCodigo, setModalCodigo] = useState(null) // string | null
+  const [errorFetch, setErrorFetch] = useState('')
 
   const fetchRooms = async () => {
     setLoading(true)
+    setErrorFetch('')
     const { data, error } = await supabase
       .from('escape_rooms')
       .select('*')
       .order('created_at', { ascending: false })
     console.log('fetchRooms:', data, error)
-    if (!error) setRooms((data ?? []).filter(r => !r.archivado))
+    if (error) {
+      setErrorFetch(`DB Error: ${error.message} | code: ${error.code} | hint: ${error.hint}`)
+    } else {
+      setRooms((data ?? []).filter(r => !r.archivado))
+    }
     setLoading(false)
   }
 
@@ -237,6 +243,13 @@ export default function Dashboard() {
             <Plus className="w-4 h-4" /> Nuevo Escape Room
           </button>
         </div>
+
+        {/* Error de carga */}
+        {errorFetch && (
+          <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm font-mono break-all">
+            {errorFetch}
+          </div>
+        )}
 
         {/* Loading */}
         {loading && (
