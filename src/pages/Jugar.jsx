@@ -15,6 +15,7 @@ function fmtTiempo(seg) {
 function normalizar(str) {
   return String(str ?? '').trim().toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '') // "3x + 2" === "3x+2"
 }
 
 // ─── Confeti ──────────────────────────────────────────────────
@@ -330,6 +331,11 @@ function PantallaJuego({ sesion, escapeRoom, equipo: equipoInicial, estaciones, 
     if (correc) {
       const pts = Math.max(0, (est.puntos ?? 100) - (pistaVista ? 20 : 0))
       setPuntosAcumulados((p) => p + pts)
+      // Actualizar progreso del equipo en BD para que el Monitor lo vea en tiempo real
+      await supabase.from('equipos').update({
+        estaciones_resueltas: indice + 1,
+        estacion_actual: Math.min(indice + 2, estaciones.length),
+      }).eq('id', equipoInicial.id)
       setAbriendo(true)
       setTimeout(() => {
         setAbriendo(false)
