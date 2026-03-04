@@ -123,9 +123,9 @@ export default function Dashboard() {
     const { data, error } = await supabase
       .from('escape_rooms')
       .select('*')
-      .eq('archivado', false)
       .order('created_at', { ascending: false })
-    if (!error) setRooms(data ?? [])
+    console.log('fetchRooms:', data, error)
+    if (!error) setRooms((data ?? []).filter(r => !r.archivado))
     setLoading(false)
   }
 

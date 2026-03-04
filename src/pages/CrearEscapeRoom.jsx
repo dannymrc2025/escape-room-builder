@@ -660,19 +660,25 @@ export default function CrearEscapeRoom() {
       .single()
 
     if (errRoom) {
-      console.error('Error escape_rooms:', errRoom)
-      setErrorGuardar(`Error al guardar: ${errRoom.message} (código: ${errRoom.code})`)
+      console.error('Error escape_rooms COMPLETO:', JSON.stringify(errRoom))
+      setErrorGuardar(`Error: ${errRoom.message} | hint: ${errRoom.hint} | details: ${errRoom.details}`)
       setGuardando(false)
       return
     }
 
+    console.log('roomData recibido:', roomData)
+    if (!roomData?.id) {
+      setErrorGuardar('Error: no se recibió el ID del escape room guardado.')
+      setGuardando(false)
+      return
+    }
     const rows = estaciones.map((e) => ({ ...e, escape_room_id: roomData.id }))
     console.log('Insertando estaciones:', rows)
     const { error: errEst } = await supabase.from('estaciones').insert(rows)
 
     if (errEst) {
-      console.error('Error estaciones:', errEst)
-      setErrorGuardar(`Error en estaciones: ${errEst.message} (código: ${errEst.code})`)
+      console.error('Error estaciones COMPLETO:', JSON.stringify(errEst))
+      setErrorGuardar(`Error en estaciones: ${errEst.message} | hint: ${errEst.hint} | details: ${errEst.details}`)
       setGuardando(false)
       return
     }
