@@ -69,24 +69,42 @@ const GRUPOS = ['2A', '2C', '2D', '2F Leona']
 
 function PantallaEntrada({ estadoInicial, onUnirse }) {
   const [codigo, setCodigo] = useState((estadoInicial?.codigo ?? '').toUpperCase())
-  const [modo, setModo] = useState('individual') // 'individual' | 'equipo'
+  const [modo, setModo] = useState(null) // se determina al buscar el código
   // Individual
   const [nombreJugador, setNombreJugador] = useState('')
   const [grupo, setGrupo] = useState('')
   // Equipo
   const [nombreEquipo, setNombreEquipo] = useState('')
   const [jugadores, setJugadores] = useState(['', '', '', ''])
+  const [grupoEquipo, setGrupoEquipo] = useState('')
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState('')
+  const [sesionCache, setSesionCache] = useState(null) // guardamos sesión al buscar código
+
+  // Buscar sala al escribir el código completo
+  const buscarSala = async (cod) => {
+    if (cod.length < 6) { setModo(null); setSesionCache(null); return }
+    const { data: ses } = await supabase
+      .from('sesiones').select('*').eq('codigo_sala', cod).limit(1)
+    const sesion = ses?.[0]
+    if (!sesion) { setModo(null); setSesionCache(null); return }
+    const { data: er } = await supabase
+      .from('escape_rooms').select('*').eq('id', sesion.escape_room_id).single()
+    sesion.escape_rooms = er
+    setSesionCache(sesion)
+    setModo(er?.modo_juego ?? 'individual')
+  }
 
   const validar = () => {
     if (!codigo.trim()) return 'Ingresa el código de sala.'
+    if (!sesionCache) return 'Código de sala inválido.'
     if (modo === 'individual') {
       if (!nombreJugador.trim()) return 'Ingresa tu nombre.'
       if (!grupo) return 'Selecciona tu grupo.'
     } else {
       if (!nombreEquipo.trim()) return 'Ingresa el nombre del equipo.'
-      if (!jugadores[0].trim()) return 'Ingresa al menos el nombre del jugador 1.'
+      if (!jugadores[0].trim()) return 'Ingresa al menos el nombre del Jugador 1.'
+      if (!grupoEquipo) return 'Selecciona el grupo.'
     }
     return ''
   }
@@ -97,25 +115,7 @@ function PantallaEntrada({ estadoInicial, onUnirse }) {
     setCargando(true)
     setError('')
 
-    const { data: ses } = await supabase
-      .from('sesiones')
-      .select('*')
-      .eq('codigo_sala', codigo.trim())
-      .limit(1)
-
-    const sesion = ses?.[0]
-    if (!sesion) {
-      setError('Código de sala inválido.')
-      setCargando(false)
-      return
-    }
-
-    const { data: er } = await supabase
-      .from('escape_rooms')
-      .select('*')
-      .eq('id', sesion.escape_room_id)
-      .single()
-    sesion.escape_rooms = er
+    const sesion = sesionCache
 
     // Construir nombre para guardar en BD
     let nombreFinal
@@ -123,9 +123,7 @@ function PantallaEntrada({ estadoInicial, onUnirse }) {
       nombreFinal = `${nombreJugador.trim()} (${grupo})`
     } else {
       const jFiltrados = jugadores.filter((j) => j.trim())
-      nombreFinal = jFiltrados.length > 0
-        ? `${nombreEquipo.trim()} · ${jFiltrados.join(', ')}`
-        : nombreEquipo.trim()
+      nombreFinal = `${nombreEquipo.trim()} [${grupoEquipo}] · ${jFiltrados.join(', ')}`
     }
 
     const { data: eq, error: errEq } = await supabase
@@ -148,7 +146,6 @@ function PantallaEntrada({ estadoInicial, onUnirse }) {
 
     sessionStorage.setItem('escape_equipo', JSON.stringify(eq))
 
-    // Marcar escape room como "en curso"
     await supabase
       .from('escape_rooms')
       .update({ estado: 'en curso' })
@@ -178,37 +175,24 @@ function PantallaEntrada({ estadoInicial, onUnirse }) {
             <input
               type="text"
               value={codigo}
-              onChange={(e) => { setCodigo(e.target.value.toUpperCase().slice(0, 8)); setError('') }}
-              onKeyDown={(e) => e.key === 'Enter' && unirse()}
+              onChange={(e) => {
+                const v = e.target.value.toUpperCase().slice(0, 8)
+                setCodigo(v)
+                setError('')
+                buscarSala(v)
+              }}
               placeholder="XXXXXXXX"
               className="w-full bg-white/10 border border-white/20 text-white placeholder-white/20 rounded-xl px-4 py-3 text-center text-2xl font-extrabold tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-blue-400 transition"
               maxLength={8}
             />
+            {sesionCache && (
+              <p className="text-green-400 text-xs mt-1.5 text-center font-semibold">
+                ✓ {sesionCache.escape_rooms?.nombre} · {modo === 'individual' ? '👤 Individual' : '👥 Equipo'}
+              </p>
+            )}
           </div>
 
-          {/* Modo de juego */}
-          <div>
-            <label className="text-xs font-semibold text-blue-300 uppercase tracking-wider block mb-2">
-              Modo de juego
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {[['individual', '👤 Individual'], ['equipo', '👥 Equipo']].map(([m, label]) => (
-                <button
-                  key={m}
-                  onClick={() => { setModo(m); setError('') }}
-                  className={`py-2.5 rounded-xl text-sm font-bold transition border ${
-                    modo === m
-                      ? 'bg-blue-600 border-blue-500 text-white'
-                      : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* ── Individual ── */}
+          {/* ── Formulario individual ── */}
           {modo === 'individual' && (
             <>
               <div>
@@ -247,7 +231,7 @@ function PantallaEntrada({ estadoInicial, onUnirse }) {
             </>
           )}
 
-          {/* ── Equipo ── */}
+          {/* ── Formulario equipo ── */}
           {modo === 'equipo' && (
             <>
               <div>
@@ -264,7 +248,27 @@ function PantallaEntrada({ estadoInicial, onUnirse }) {
               </div>
               <div>
                 <label className="text-xs font-semibold text-blue-300 uppercase tracking-wider block mb-2">
-                  Jugadores (hasta 4)
+                  Grupo
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {GRUPOS.map((g) => (
+                    <button
+                      key={g}
+                      onClick={() => { setGrupoEquipo(g); setError('') }}
+                      className={`py-2.5 rounded-xl text-sm font-bold transition border ${
+                        grupoEquipo === g
+                          ? 'bg-blue-600 border-blue-500 text-white'
+                          : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'
+                      }`}
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-blue-300 uppercase tracking-wider block mb-2">
+                  Jugadores (mín. 1, máx. 4)
                 </label>
                 <div className="space-y-2">
                   {jugadores.map((j, i) => (

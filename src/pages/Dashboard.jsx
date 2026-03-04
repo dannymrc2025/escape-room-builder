@@ -70,7 +70,45 @@ function MenuAcciones({ room, onActivar, onDesactivar, onEditar, onResultados, o
   )
 }
 
-function ModalCodigo({ codigo, onClose }) {
+// ─── Modal: elegir modo antes de activar ────────────────────
+function ModalActivar({ room, onConfirmar, onClose }) {
+  const [modo, setModo] = useState('')
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 relative">
+        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition">
+          <X className="w-5 h-5" />
+        </button>
+        <h2 className="text-xl font-bold text-gray-800 mb-1">Activar escape room</h2>
+        <p className="text-gray-500 text-sm mb-6">¿Cómo se jugará <span className="font-semibold text-gray-700">{room.nombre}</span>?</p>
+        <div className="grid grid-cols-2 gap-3 mb-6">
+          {[['individual', '👤', 'Individual', 'Cada alumno juega solo'], ['equipo', '👥', 'En equipo', 'Grupos de hasta 4 jugadores']].map(([m, icon, label, desc]) => (
+            <button
+              key={m}
+              onClick={() => setModo(m)}
+              className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition text-center ${
+                modo === m ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-200 hover:bg-gray-50'
+              }`}
+            >
+              <span className="text-3xl">{icon}</span>
+              <span className={`font-bold text-sm ${modo === m ? 'text-blue-700' : 'text-gray-700'}`}>{label}</span>
+              <span className="text-xs text-gray-400">{desc}</span>
+            </button>
+          ))}
+        </div>
+        <button
+          disabled={!modo}
+          onClick={() => onConfirmar(modo)}
+          className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-gray-300 text-white font-bold py-3 rounded-xl transition"
+        >
+          Activar y generar código
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ModalCodigo({ codigo, modoJuego, onClose }) {
   const [copiado, setCopiado] = useState(false)
 
   const copiar = () => {
@@ -90,6 +128,13 @@ function ModalCodigo({ codigo, onClose }) {
             <Lock className="w-8 h-8 text-green-600" />
           </div>
           <h2 className="text-2xl font-bold text-gray-800">¡Escape Room Activado!</h2>
+          {modoJuego && (
+            <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
+              modoJuego === 'individual' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+            }`}>
+              {modoJuego === 'individual' ? '👤 Modo individual' : '👥 Modo equipo'}
+            </span>
+          )}
           <p className="text-gray-500 text-sm">Comparte este código con tus alumnos para que puedan unirse:</p>
           <div className="bg-gray-50 border-2 border-dashed border-blue-300 rounded-xl px-8 py-4 w-full">
             <span className="text-5xl font-extrabold tracking-widest text-blue-700">{codigo}</span>
@@ -117,7 +162,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [busqueda, setBusqueda] = useState('')
   const [filtroEstado, setFiltroEstado] = useState('Todos')
-  const [modalCodigo, setModalCodigo] = useState(null)
+  const [modalCodigo, setModalCodigo] = useState(null)   // { codigo, modoJuego }
+  const [modalActivar, setModalActivar] = useState(null) // room object
   const [errorFetch, setErrorFetch] = useState('')
   const [equiposCounts, setEquiposCounts] = useState({}) // roomId -> count
   const [sesionesMap, setSesionesMap] = useState({}) // roomId -> sesionId
@@ -191,7 +237,7 @@ export default function Dashboard() {
       .limit(1)
     
     if (data?.[0]?.codigo_sala) {
-      setModalCodigo(data[0].codigo_sala)
+      setModalCodigo({ codigo: data[0].codigo_sala, modoJuego: room.modo_juego })
       return
     }
 
@@ -206,28 +252,25 @@ export default function Dashboard() {
       alert(`Error sesión: ${error.message} | código: ${error.code}`)
       return 
     }
-    setModalCodigo(codigo)
+    setModalCodigo({ codigo, modoJuego: room.modo_juego })
   }
 
-  const handleActivar = async (room) => {
+  const handleActivar = async (room, modoJuego) => {
     const codigo = genCodigo()
     const { error: errRoom } = await supabase
       .from('escape_rooms')
-      .update({ estado: 'activo' })
+      .update({ estado: 'activo', modo_juego: modoJuego })
       .eq('id', room.id)
     if (errRoom) { console.error('Error activar room:', errRoom); return }
 
-    const { data: sesData, error: errSes } = await supabase
-      .from('sesiones')
-      .insert({
-        escape_room_id: room.id,
-        codigo_sala: codigo,
-        estado: 'activo',
-      })
-      .select()
-    console.log('Sesion insertada:', sesData, errSes)
+    await supabase.from('sesiones').insert({
+      escape_room_id: room.id,
+      codigo_sala: codigo,
+      estado: 'activo',
+    })
 
-    setModalCodigo(codigo)
+    setModalActivar(null)
+    setModalCodigo({ codigo, modoJuego })
     fetchRooms()
   }
 
@@ -370,7 +413,7 @@ export default function Dashboard() {
                   <h3 className="font-bold text-gray-800 text-base leading-tight flex-1">{room.nombre}</h3>
                   <MenuAcciones
                     room={room}
-                    onActivar={() => handleActivar(room)}
+                    onActivar={() => setModalActivar(room)}
                     onDesactivar={() => handleDesactivar(room)}
                     onEditar={() => navigate(`/editar/${room.id}`)}
                     onResultados={() => navigate(`/resultados/${room.id}`)}
@@ -448,9 +491,18 @@ export default function Dashboard() {
         )}
       </main>
 
+      {/* Modal activar (elegir modo) */}
+      {modalActivar && (
+        <ModalActivar
+          room={modalActivar}
+          onConfirmar={(modo) => handleActivar(modalActivar, modo)}
+          onClose={() => setModalActivar(null)}
+        />
+      )}
+
       {/* Modal código */}
       {modalCodigo && (
-        <ModalCodigo codigo={modalCodigo} onClose={() => setModalCodigo(null)} />
+        <ModalCodigo codigo={modalCodigo.codigo} modoJuego={modalCodigo.modoJuego} onClose={() => setModalCodigo(null)} />
       )}
     </div>
   )
