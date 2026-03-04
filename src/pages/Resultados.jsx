@@ -5,7 +5,7 @@ import {
 } from 'recharts'
 import {
   ChevronLeft, Download, Trophy, Clock, Star,
-  MapPin, Target, AlertCircle, Loader2, BookOpen
+  MapPin, Target, AlertCircle, Loader2, BookOpen, FileText
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 
@@ -24,6 +24,19 @@ function fmtFecha(iso) {
     hour: '2-digit', minute: '2-digit'
   })
 }
+
+// Extrae el grupo del nombre guardado en BD
+// Individual: "Juan Pérez (2A)"  → "2A"
+// Equipo:     "Los Mates [2A] · .." → "2A"
+function extraerGrupo(nombre) {
+  const m1 = nombre?.match(/\(([^)]+)\)$/)
+  if (m1) return m1[1]
+  const m2 = nombre?.match(/\[([^\]]+)\]/)
+  if (m2) return m2[1]
+  return null
+}
+
+const GRUPOS_FILTER = ['Todos', '2A', '2C', '2D', '2F Leona']
 
 // ─── Podio ────────────────────────────────────────────────────
 function Podio({ top3 }) {
@@ -87,6 +100,7 @@ export default function Resultados() {
   const [progreso, setProgreso] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [filtroGrupo, setFiltroGrupo] = useState('Todos')
 
   useEffect(() => {
     if (!sesionId) return
@@ -131,16 +145,26 @@ export default function Resultados() {
     setLoading(false)
   }
 
-  // ── Análisis pedagógico ────────────────────────────────────
+  // ── Resultados filtrados por grupo ─────────────────────────
+  const resultadosFiltrados = useMemo(() => {
+    if (filtroGrupo === 'Todos') return resultados
+    return resultados.filter((r) => extraerGrupo(r.equipos?.nombre) === filtroGrupo)
+  }, [resultados, filtroGrupo])
+
+  const progresoFiltrado = useMemo(() => {
+    if (filtroGrupo === 'Todos') return progreso
+    const ids = new Set(resultadosFiltrados.map((r) => r.equipo_id))
+    return progreso.filter((p) => ids.has(p.equipo_id))
+  }, [progreso, resultadosFiltrados, filtroGrupo])
+
+  // ── Análisis pedagógico ───────────────────────────────
   const analisis = useMemo(() => {
-    if (!estaciones.length || !progreso.length) return []
+    if (!estaciones.length || !progresoFiltrado.length) return []
     return estaciones.map((est) => {
-      const intentosEst = progreso.filter((p) => p.estacion_id === est.id)
+      const intentosEst = progresoFiltrado.filter((p) => p.estacion_id === est.id)
       const equiposUnicos = [...new Set(intentosEst.map((p) => p.equipo_id))]
       const totalIntentos = intentosEst.length
-      const promedio = equiposUnicos.length > 0
-        ? totalIntentos / equiposUnicos.length
-        : 0
+      const promedio = equiposUnicos.length > 0 ? totalIntentos / equiposUnicos.length : 0
       return {
         id: est.id,
         label: `Est. ${est.numero}`,
@@ -148,7 +172,7 @@ export default function Resultados() {
         promedio: Math.round(promedio * 10) / 10,
       }
     })
-  }, [estaciones, progreso])
+  }, [estaciones, progresoFiltrado])
 
   const estacionMasDificil = useMemo(() => {
     if (!analisis.length) return null
@@ -157,10 +181,11 @@ export default function Resultados() {
 
   // ── Exportar CSV ───────────────────────────────────────────
   const exportarCSV = () => {
-    const encabezado = ['Posicion', 'Equipo', 'Puntos', 'Tiempo', 'Estaciones completadas', 'Intentos totales']
-    const filas = resultados.map((r, i) => [
+    const encabezado = ['Posicion', 'Equipo', 'Grupos', 'Puntos', 'Tiempo', 'Estaciones completadas', 'Intentos totales']
+    const filas = resultadosFiltrados.map((r, i) => [
       i + 1,
       `"${r.equipos?.nombre ?? ''}"`,
+      extraerGrupo(r.equipos?.nombre) ?? '',
       r.puntos_total ?? 0,
       fmtTiempo(r.tiempo_total),
       r.equipos?.estaciones_resueltas ?? 0,
@@ -171,9 +196,73 @@ export default function Resultados() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `resultados_${escapeRoom?.nombre?.replace(/\s+/g, '_') ?? 'sesion'}_${sesionId}.csv`
+    a.download = `resultados_${escapeRoom?.nombre?.replace(/\s+/g, '_') ?? 'sesion'}${filtroGrupo !== 'Todos' ? `_${filtroGrupo}` : ''}.csv`
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  // ── Exportar PDF ─────────────────────────────────────────
+  const exportarPDF = () => {
+    const filas = resultadosFiltrados.map((r, i) => {
+      const medal = ['🥇', '🥈', '🥉'][i] ?? `${i + 1}`
+      return `<tr class="${i === 0 ? 'gold' : i % 2 === 0 ? 'even' : ''}">
+        <td style="text-align:center;font-size:18px">${medal}</td>
+        <td>${r.equipos?.nombre ?? '—'}</td>
+        <td style="text-align:center"><span class="badge">${r.puntos_total ?? 0} pts</span></td>
+        <td style="text-align:center">${fmtTiempo(r.tiempo_total)}</td>
+        <td style="text-align:center">${r.equipos?.estaciones_resueltas ?? 0} / ${estaciones.length}</td>
+        <td style="text-align:center">${r.equipos?.intentos_totales ?? 0}</td>
+      </tr>`
+    }).join('')
+
+    const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Resultados — ${escapeRoom?.nombre ?? 'Escape Room'}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; padding: 32px; color: #1f2937; background: #fff; }
+    .header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; border-bottom: 2px solid #e5e7eb; padding-bottom: 16px; }
+    .icon { font-size: 36px; }
+    h1 { font-size: 22px; font-weight: 800; color: #1e3a8a; }
+    .meta { font-size: 12px; color: #6b7280; margin-top: 2px; }
+    .grupo-badge { display:inline-block; background:#dbeafe; color:#1d4ed8; font-size:11px; font-weight:700; padding:2px 10px; border-radius:999px; margin-left:6px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+    thead tr { background: #1e3a8a; color: #fff; }
+    th { padding: 10px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+    td { padding: 9px 14px; border-bottom: 1px solid #f3f4f6; }
+    .gold td { background: #fef9c3; font-weight: 600; }
+    .even td { background: #f9fafb; }
+    .badge { background: #ede9fe; color: #5b21b6; padding: 2px 10px; border-radius: 999px; font-weight: 700; font-size: 12px; }
+    .footer { margin-top: 24px; text-align: center; font-size: 11px; color: #9ca3af; }
+    @media print { body { padding: 16px; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span class="icon">🔐</span>
+    <div>
+      <h1>${escapeRoom?.nombre ?? 'Escape Room'}
+        ${filtroGrupo !== 'Todos' ? `<span class="grupo-badge">${filtroGrupo}</span>` : ''}
+      </h1>
+      <p class="meta">${fmtFecha(sesion?.created_at)} &nbsp;·&nbsp; ${resultadosFiltrados.length} participante${resultadosFiltrados.length !== 1 ? 's' : ''}</p>
+    </div>
+  </div>
+  <table>
+    <thead><tr><th>#</th><th>Alumno / Equipo</th><th>Puntos</th><th>Tiempo</th><th>Estaciones</th><th>Intentos</th></tr></thead>
+    <tbody>${filas}</tbody>
+  </table>
+  <div class="footer">Generado el ${new Date().toLocaleDateString('es-MX', { year:'numeric', month:'long', day:'numeric' })}</div>
+</body>
+</html>`
+
+    const w = window.open('', '_blank', 'width=900,height=650')
+    if (!w) { alert('Permite ventanas emergentes para generar el PDF.'); return }
+    w.document.write(html)
+    w.document.close()
+    w.focus()
+    setTimeout(() => { w.print() }, 400)
   }
 
   // ── Render ─────────────────────────────────────────────────
@@ -197,7 +286,7 @@ export default function Resultados() {
     )
   }
 
-  const top3 = resultados.slice(0, 3).map((r) => ({
+  const top3 = resultadosFiltrados.slice(0, 3).map((r) => ({
     nombre: r.equipos?.nombre ?? '—',
     puntos_total: r.puntos_total ?? 0,
     tiempo_total: r.tiempo_total ?? 0,
@@ -222,12 +311,18 @@ export default function Resultados() {
               <p className="text-xs text-gray-400">{fmtFecha(sesion?.created_at)}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
             <button
               onClick={exportarCSV}
               className="flex items-center gap-2 text-sm font-semibold text-gray-700 border border-gray-200 hover:border-gray-300 hover:bg-gray-50 px-4 py-2 rounded-xl transition"
             >
-              <Download className="w-4 h-4" /> Exportar CSV
+              <Download className="w-4 h-4" /> CSV
+            </button>
+            <button
+              onClick={exportarPDF}
+              className="flex items-center gap-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-xl transition"
+            >
+              <FileText className="w-4 h-4" /> PDF
             </button>
           </div>
         </div>
@@ -235,20 +330,42 @@ export default function Resultados() {
 
       <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-8">
 
-        {/* Stats generales */}
+        {/* Filtro por grupo */}
+        <div className="flex flex-wrap gap-2">
+          {GRUPOS_FILTER.map((g) => (
+            <button
+              key={g}
+              onClick={() => setFiltroGrupo(g)}
+              className={`px-4 py-1.5 rounded-full text-sm font-semibold transition border ${
+                filtroGrupo === g
+                  ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
+                  : 'bg-white border-gray-200 text-gray-600 hover:border-blue-300 hover:text-blue-600'
+              }`}
+            >
+              {g}
+            </button>
+          ))}
+          {filtroGrupo !== 'Todos' && (
+            <span className="text-xs text-gray-400 self-center ml-1">
+              {resultadosFiltrados.length} participante{resultadosFiltrados.length !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+
+        {/* Stats generales */}}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { icon: <Trophy className="w-5 h-5 text-yellow-500" />, label: 'Equipos', val: resultados.length },
+            { icon: <Trophy className="w-5 h-5 text-yellow-500" />, label: 'Participantes', val: resultadosFiltrados.length },
             { icon: <MapPin className="w-5 h-5 text-blue-500" />, label: 'Estaciones', val: estaciones.length },
             {
               icon: <Star className="w-5 h-5 text-violet-500" />,
               label: 'Mejor puntaje',
-              val: resultados[0]?.puntos_total ?? '—'
+              val: resultadosFiltrados[0]?.puntos_total ?? '—'
             },
             {
               icon: <Clock className="w-5 h-5 text-green-500" />,
               label: 'Mejor tiempo',
-              val: resultados[0] ? fmtTiempo(resultados[0].tiempo_total) : '—'
+              val: resultadosFiltrados[0] ? fmtTiempo(resultadosFiltrados[0].tiempo_total) : '—'
             },
           ].map(({ icon, label, val }) => (
             <div key={label} className="bg-white border border-gray-100 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
@@ -287,20 +404,18 @@ export default function Resultados() {
               <table className="w-full text-sm text-left">
                 <thead className="bg-gray-50 text-xs text-gray-500 font-semibold uppercase tracking-wide">
                   <tr>
-                    {['#', 'Equipo', 'Puntos', 'Tiempo', 'Estaciones', 'Intentos'].map((h) => (
+                    {['#', 'Equipo / Alumno', 'Puntos', 'Tiempo', 'Estaciones', 'Intentos'].map((h) => (
                       <th key={h} className="px-5 py-3 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {resultados.map((r, i) => {
+                  {resultadosFiltrados.map((r, i) => {
                     const medal = ['🥇', '🥈', '🥉'][i] ?? null
                     return (
                       <tr key={r.id} className={`hover:bg-gray-50 transition ${i === 0 ? 'bg-yellow-50/50' : ''}`}>
                         <td className="px-5 py-3 font-bold text-gray-500">
-                          {medal
-                            ? <span className="text-lg">{medal}</span>
-                            : <span>{i + 1}</span>}
+                          {medal ? <span className="text-lg">{medal}</span> : <span>{i + 1}</span>}
                         </td>
                         <td className="px-5 py-3 font-semibold text-gray-800">{r.equipos?.nombre ?? '—'}</td>
                         <td className="px-5 py-3">
