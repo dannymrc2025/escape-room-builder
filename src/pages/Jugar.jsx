@@ -90,6 +90,8 @@ function PantallaEntrada({ estadoInicial, onUnirse }) {
     if (!sesion) { setModo(null); setSesionCache(null); return }
     const { data: er } = await supabase
       .from('escape_rooms').select('*').eq('id', sesion.escape_room_id).single()
+    // Si el room está inactivo, no permitir unirse
+    if (er?.estado === 'inactivo') { setModo(null); setSesionCache(null); return }
     sesion.escape_rooms = er
     setSesionCache(sesion)
     setModo(er?.modo_juego ?? 'individual')
