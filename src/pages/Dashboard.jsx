@@ -152,11 +152,23 @@ export default function Dashboard() {
     navigate('/')
   }
 
+  const handleVerCodigo = async (room) => {
+    const { data } = await supabase
+      .from('sesiones')
+      .select('codigo_sala')
+      .eq('escape_room_id', room.id)
+      .eq('estado', 'activo')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+    if (data?.codigo_sala) setModalCodigo(data.codigo_sala)
+  }
+
   const handleActivar = async (room) => {
     const codigo = genCodigo()
     const { error: errRoom } = await supabase
       .from('escape_rooms')
-      .update({ estado: 'activo', codigo_sala: codigo })
+      .update({ estado: 'activo' })
       .eq('id', room.id)
     if (errRoom) { console.error(errRoom); return }
 
@@ -176,7 +188,7 @@ export default function Dashboard() {
   }
 
   const handleDuplicar = async (room) => {
-    const { id, created_at, updated_at, codigo_sala, ...rest } = room
+    const { id, created_at, updated_at, ...rest } = room
     await supabase.from('escape_rooms').insert({ ...rest, nombre: `${rest.nombre} (copia)`, estado: 'inactivo' })
     fetchRooms()
   }
@@ -340,6 +352,16 @@ export default function Dashboard() {
                   </span>
                   <BadgeEstado estado={room.estado ?? 'inactivo'} />
                 </div>
+
+                {/* Botón ver código si está activo */}
+                {room.estado === 'activo' && (
+                  <button
+                    onClick={() => handleVerCodigo(room)}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-500 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition w-full justify-center"
+                  >
+                    <ClipboardCopy className="w-3.5 h-3.5" /> Ver código de sala
+                  </button>
+                )}
 
                 {/* Fecha */}
                 <div className="flex items-center gap-1 text-xs text-gray-400 mt-auto">
