@@ -65,35 +65,51 @@ function Confeti() {
 }
 
 // ─── Pantalla 1: Entrada ──────────────────────────────────────
+const GRUPOS = ['2A', '2C', '2D', '2F Leona']
+
 function PantallaEntrada({ estadoInicial, onUnirse }) {
   const [codigo, setCodigo] = useState((estadoInicial?.codigo ?? '').toUpperCase())
-  const [nombre, setNombre] = useState('')
+  const [modo, setModo] = useState('individual') // 'individual' | 'equipo'
+  // Individual
+  const [nombreJugador, setNombreJugador] = useState('')
+  const [grupo, setGrupo] = useState('')
+  // Equipo
+  const [nombreEquipo, setNombreEquipo] = useState('')
+  const [jugadores, setJugadores] = useState(['', '', '', ''])
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState('')
 
-  const unirse = async () => {
-    if (!codigo.trim() || !nombre.trim()) {
-      setError('Completa el código de sala y el nombre del equipo.')
-      return
+  const validar = () => {
+    if (!codigo.trim()) return 'Ingresa el código de sala.'
+    if (modo === 'individual') {
+      if (!nombreJugador.trim()) return 'Ingresa tu nombre.'
+      if (!grupo) return 'Selecciona tu grupo.'
+    } else {
+      if (!nombreEquipo.trim()) return 'Ingresa el nombre del equipo.'
+      if (!jugadores[0].trim()) return 'Ingresa al menos el nombre del jugador 1.'
     }
+    return ''
+  }
+
+  const unirse = async () => {
+    const err = validar()
+    if (err) { setError(err); return }
     setCargando(true)
     setError('')
-    const { data: ses, error: errSes } = await supabase
+
+    const { data: ses } = await supabase
       .from('sesiones')
       .select('*')
       .eq('codigo_sala', codigo.trim())
       .limit(1)
 
     const sesion = ses?.[0]
-    console.log('sesion encontrada:', sesion, errSes)
-
     if (!sesion) {
-      setError('Código de sala inválido o la sesión no está activa.')
+      setError('Código de sala inválido.')
       setCargando(false)
       return
     }
 
-    // Obtener escape room por separado
     const { data: er } = await supabase
       .from('escape_rooms')
       .select('*')
@@ -101,11 +117,22 @@ function PantallaEntrada({ estadoInicial, onUnirse }) {
       .single()
     sesion.escape_rooms = er
 
+    // Construir nombre para guardar en BD
+    let nombreFinal
+    if (modo === 'individual') {
+      nombreFinal = `${nombreJugador.trim()} (${grupo})`
+    } else {
+      const jFiltrados = jugadores.filter((j) => j.trim())
+      nombreFinal = jFiltrados.length > 0
+        ? `${nombreEquipo.trim()} · ${jFiltrados.join(', ')}`
+        : nombreEquipo.trim()
+    }
+
     const { data: eq, error: errEq } = await supabase
       .from('equipos')
       .insert({
         sesion_id: sesion.id,
-        nombre: nombre.trim(),
+        nombre: nombreFinal,
         estacion_actual: 1,
         estaciones_resueltas: 0,
         intentos_totales: 0,
@@ -114,7 +141,6 @@ function PantallaEntrada({ estadoInicial, onUnirse }) {
       .single()
 
     if (errEq || !eq) {
-      console.error('Error equipos:', errEq)
       setError('No se pudo unir. Intenta de nuevo.')
       setCargando(false)
       return
@@ -132,7 +158,7 @@ function PantallaEntrada({ estadoInicial, onUnirse }) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-blue-950 flex items-center justify-center px-4">
+    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-blue-950 flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="inline-flex bg-blue-500/20 border border-blue-400/30 rounded-full p-5 mb-4">
@@ -143,6 +169,8 @@ function PantallaEntrada({ estadoInicial, onUnirse }) {
         </div>
 
         <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm space-y-4">
+
+          {/* Código de sala */}
           <div>
             <label className="text-xs font-semibold text-blue-300 uppercase tracking-wider block mb-1.5">
               Código de sala
@@ -158,19 +186,106 @@ function PantallaEntrada({ estadoInicial, onUnirse }) {
             />
           </div>
 
+          {/* Modo de juego */}
           <div>
-            <label className="text-xs font-semibold text-blue-300 uppercase tracking-wider block mb-1.5">
-              Nombre del equipo
+            <label className="text-xs font-semibold text-blue-300 uppercase tracking-wider block mb-2">
+              Modo de juego
             </label>
-            <input
-              type="text"
-              value={nombre}
-              onChange={(e) => { setNombre(e.target.value); setError('') }}
-              onKeyDown={(e) => e.key === 'Enter' && unirse()}
-              placeholder="Ej: Los Matemáticos"
-              className="w-full bg-white/10 border border-white/20 text-white placeholder-white/20 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400 transition"
-            />
+            <div className="grid grid-cols-2 gap-2">
+              {[['individual', '👤 Individual'], ['equipo', '👥 Equipo']].map(([m, label]) => (
+                <button
+                  key={m}
+                  onClick={() => { setModo(m); setError('') }}
+                  className={`py-2.5 rounded-xl text-sm font-bold transition border ${
+                    modo === m
+                      ? 'bg-blue-600 border-blue-500 text-white'
+                      : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
+
+          {/* ── Individual ── */}
+          {modo === 'individual' && (
+            <>
+              <div>
+                <label className="text-xs font-semibold text-blue-300 uppercase tracking-wider block mb-1.5">
+                  Tu nombre
+                </label>
+                <input
+                  type="text"
+                  value={nombreJugador}
+                  onChange={(e) => { setNombreJugador(e.target.value); setError('') }}
+                  onKeyDown={(e) => e.key === 'Enter' && unirse()}
+                  placeholder="Ej: Juan Pérez"
+                  className="w-full bg-white/10 border border-white/20 text-white placeholder-white/20 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400 transition"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-blue-300 uppercase tracking-wider block mb-2">
+                  Tu grupo
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {GRUPOS.map((g) => (
+                    <button
+                      key={g}
+                      onClick={() => { setGrupo(g); setError('') }}
+                      className={`py-2.5 rounded-xl text-sm font-bold transition border ${
+                        grupo === g
+                          ? 'bg-blue-600 border-blue-500 text-white'
+                          : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'
+                      }`}
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* ── Equipo ── */}
+          {modo === 'equipo' && (
+            <>
+              <div>
+                <label className="text-xs font-semibold text-blue-300 uppercase tracking-wider block mb-1.5">
+                  Nombre del equipo
+                </label>
+                <input
+                  type="text"
+                  value={nombreEquipo}
+                  onChange={(e) => { setNombreEquipo(e.target.value); setError('') }}
+                  placeholder="Ej: Los Matemáticos"
+                  className="w-full bg-white/10 border border-white/20 text-white placeholder-white/20 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400 transition"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-blue-300 uppercase tracking-wider block mb-2">
+                  Jugadores (hasta 4)
+                </label>
+                <div className="space-y-2">
+                  {jugadores.map((j, i) => (
+                    <input
+                      key={i}
+                      type="text"
+                      value={j}
+                      onChange={(e) => {
+                        const arr = [...jugadores]
+                        arr[i] = e.target.value
+                        setJugadores(arr)
+                        setError('')
+                      }}
+                      placeholder={`Jugador ${i + 1}${i === 0 ? ' (requerido)' : ' (opcional)'}`}
+                      className="w-full bg-white/10 border border-white/20 text-white placeholder-white/30 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition"
+                    />
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
 
           {error && (
             <p className="text-red-400 text-sm flex items-center gap-2">

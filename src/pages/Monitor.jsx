@@ -267,6 +267,15 @@ export default function Monitor() {
     return () => { supabase.removeChannel(channel) }
   }, [sesionId])
 
+  // ── Polling de respaldo (cada 15 seg por si falla el realtime) ──
+  useEffect(() => {
+    const poll = setInterval(async () => {
+      const { data } = await supabase.from('equipos').select('*').eq('sesion_id', sesionId).order('nombre')
+      if (data) setEquipos(data)
+    }, 15000)
+    return () => clearInterval(poll)
+  }, [sesionId])
+
   // ── Temporizador ───────────────────────────────────────────
   useEffect(() => {
     if (pausado) { clearInterval(timerRef.current); return }
