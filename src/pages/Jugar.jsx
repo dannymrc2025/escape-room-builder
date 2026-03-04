@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
   Lock, Unlock, Clock, Star, Trophy, Eye, Check,
-  ChevronRight, AlertCircle, Loader2, Home, Users
+  ChevronRight, AlertCircle, Loader2, Home, Users, BookOpen
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 
@@ -380,11 +380,47 @@ function PantallaJuego({ sesion, escapeRoom, equipo: equipoInicial, estaciones, 
   const [puntosAcumulados, setPuntosAcumulados] = useState(0)
   const [tiempoRestante, setTiempoRestante] = useState((escapeRoom?.tiempo_limite ?? 30) * 60)
   const [finalizando, setFinalizando] = useState(false)
+  // 'intro' = mini-historia antes del ejercicio | 'retro' = retroalim. al resolver | null = ejercicio
+  const [pantallaExtra, setPantallaExtra] = useState(() =>
+    estaciones[0]?.mini_historia ? 'intro' : null
+  )
+  const [textoExtra, setTextoExtra] = useState(() =>
+    estaciones[0]?.mini_historia || ''
+  )
 
   const timerRef = useRef(null)
   const finalizadoRef = useRef(false)
   const intentosTotalesRef = useRef(0)
   const inputRef = useRef()
+
+  // Avanza a la siguiente estación mostrando mini_historia si existe
+  const avanzarAEstacion = (nextIdx) => {
+    setPistaTexto(null)
+    setPistaVista(false)
+    setRespuesta('')
+    setIntentos(0)
+    setIndice(nextIdx)
+    const nextEst = estaciones[nextIdx]
+    if (nextEst?.mini_historia) {
+      setPantallaExtra('intro')
+      setTextoExtra(nextEst.mini_historia)
+    } else {
+      setPantallaExtra(null)
+      setTextoExtra('')
+      setTimeout(() => inputRef.current?.focus(), 50)
+    }
+  }
+
+  const continuar = () => {
+    if (pantallaExtra === 'retro') {
+      avanzarAEstacion(indice + 1)
+    } else {
+      // intro
+      setPantallaExtra(null)
+      setTextoExtra('')
+      setTimeout(() => inputRef.current?.focus(), 50)
+    }
+  }
 
   // Start timer
   useEffect(() => {
@@ -404,13 +440,13 @@ function PantallaJuego({ sesion, escapeRoom, equipo: equipoInicial, estaciones, 
 
   // Finalize on all stations completed
   useEffect(() => {
-    if (indice >= estaciones.length && estaciones.length > 0 && !finalizadoRef.current && !abriendo) {
+    if (indice >= estaciones.length && estaciones.length > 0 && !finalizadoRef.current && !abriendo && pantallaExtra !== 'retro') {
       finalizadoRef.current = true
       setFinalizando(true)
     }
-  }, [indice, estaciones.length, abriendo])
+  }, [indice, estaciones.length, abriendo, pantallaExtra])
 
-  // Run async finalization (values captured from this render)
+  // Run async finalization
   useEffect(() => {
     if (!finalizando) return
     clearInterval(timerRef.current)
@@ -452,7 +488,6 @@ function PantallaJuego({ sesion, escapeRoom, equipo: equipoInicial, estaciones, 
     if (correc) {
       const pts = Math.max(0, (est.puntos ?? 100) - (pistaVista ? 20 : 0))
       setPuntosAcumulados((p) => p + pts)
-      // Actualizar progreso del equipo en BD para que el Monitor lo vea en tiempo real
       await supabase.from('equipos').update({
         estaciones_resueltas: indice + 1,
         estacion_actual: Math.min(indice + 2, estaciones.length),
@@ -460,12 +495,12 @@ function PantallaJuego({ sesion, escapeRoom, equipo: equipoInicial, estaciones, 
       setAbriendo(true)
       setTimeout(() => {
         setAbriendo(false)
-        setIndice((i) => i + 1)
-        setRespuesta('')
-        setIntentos(0)
-        setPistaVista(false)
-        setPistaTexto(null)
-        setTimeout(() => inputRef.current?.focus(), 50)
+        if (est.retroalimentacion) {
+          setPantallaExtra('retro')
+          setTextoExtra(est.retroalimentacion)
+        } else {
+          avanzarAEstacion(indice + 1)
+        }
       }, 1400)
     } else {
       setIntentos((n) => n + 1)
@@ -504,6 +539,81 @@ function PantallaJuego({ sesion, escapeRoom, equipo: equipoInicial, estaciones, 
     ? 'text-amber-400'
     : 'text-green-400'
 
+  // ── Pantalla de mini-historia ─────────────────────────────────
+  if (pantallaExtra === 'intro') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-violet-950 flex flex-col">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-white/10">
+          <span className="text-sm font-semibold text-gray-300 truncate max-w-[30%]">{equipoInicial.nombre}</span>
+          <span className={`text-2xl sm:text-3xl font-extrabold tabular-nums ${colorTimer} ${tiempoRestante < 60 ? 'animate-pulse' : ''}`}>
+            {fmtTiempo(tiempoRestante)}
+          </span>
+          <span className="text-sm text-gray-400">{indice + 1} / {estaciones.length}</span>
+        </div>
+        <div className="w-full bg-gray-800 h-1">
+          <div className="bg-violet-500 h-1 transition-all duration-500" style={{ width: `${(indice / estaciones.length) * 100}%` }} />
+        </div>
+        <div className="flex-1 flex items-center justify-center px-4 py-8">
+          <div className="w-full max-w-lg text-center space-y-6">
+            <span className="bg-violet-500/20 border border-violet-400/30 text-violet-300 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide">
+              Estación {indice + 1} · {est.titulo}
+            </span>
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm text-left">
+              <div className="flex items-center gap-2 mb-3">
+                <BookOpen className="w-5 h-5 text-violet-400 shrink-0" />
+                <span className="text-xs font-semibold text-violet-400 uppercase tracking-wide">Contexto de la misión</span>
+              </div>
+              <p className="text-gray-200 text-base leading-relaxed">{textoExtra}</p>
+            </div>
+            <button
+              onClick={continuar}
+              className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-8 py-3 rounded-xl transition flex items-center gap-2 mx-auto"
+            >
+              Comenzar ejercicio <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Pantalla de retroalimentación ─────────────────────────────
+  if (pantallaExtra === 'retro') {
+    const esUltima = indice + 1 >= estaciones.length
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-green-950 flex flex-col">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-white/10">
+          <span className="text-sm font-semibold text-gray-300 truncate max-w-[30%]">{equipoInicial.nombre}</span>
+          <span className={`text-2xl sm:text-3xl font-extrabold tabular-nums ${colorTimer}`}>
+            {fmtTiempo(tiempoRestante)}
+          </span>
+          <span className="text-sm text-gray-400">{indice + 1} / {estaciones.length}</span>
+        </div>
+        <div className="w-full bg-gray-800 h-1">
+          <div className="bg-green-500 h-1 transition-all duration-500" style={{ width: `${((indice + 1) / estaciones.length) * 100}%` }} />
+        </div>
+        <div className="flex-1 flex items-center justify-center px-4 py-8">
+          <div className="w-full max-w-lg text-center space-y-6">
+            <div className="bg-green-500/20 rounded-full p-4 w-fit mx-auto">
+              <Unlock className="w-10 h-10 text-green-400" />
+            </div>
+            <p className="text-green-400 font-bold text-2xl">¡Estación desbloqueada!</p>
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm text-left">
+              <p className="text-gray-200 text-base leading-relaxed">{textoExtra}</p>
+            </div>
+            <button
+              onClick={continuar}
+              className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-8 py-3 rounded-xl transition flex items-center gap-2 mx-auto"
+            >
+              {esUltima ? 'Ver resultados' : 'Siguiente estación'} <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Ejercicio principal ───────────────────────────────────────
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-blue-950 flex flex-col">
       {/* Header */}
@@ -616,7 +726,7 @@ function PantallaJuego({ sesion, escapeRoom, equipo: equipoInicial, estaciones, 
 }
 
 // ─── Pantalla 4: Victoria ──────────────────────────────────────
-function PantallaVictoria({ equipo, tiempoUsado, puntos, sesionId }) {
+function PantallaVictoria({ equipo, tiempoUsado, puntos, sesionId, retroalimentacionFinal }) {
   const navigate = useNavigate()
   const [ranking, setRanking] = useState([])
   const [posicion, setPosicion] = useState(null)
@@ -650,7 +760,14 @@ function PantallaVictoria({ equipo, tiempoUsado, puntos, sesionId }) {
           <Trophy className="w-14 h-14 text-yellow-300" />
         </div>
         <h1 className="text-4xl font-extrabold text-white mb-2">¡Misión cumplida!</h1>
-        <p className="text-yellow-300 text-lg font-semibold mb-6">{equipo?.nombre}</p>
+        <p className="text-yellow-300 text-lg font-semibold mb-4">{equipo?.nombre}</p>
+
+        {/* Mensaje de cierre de la historia */}
+        {retroalimentacionFinal && (
+          <div className="bg-yellow-500/10 border border-yellow-400/30 rounded-2xl p-4 mb-4 text-left">
+            <p className="text-yellow-200 text-sm leading-relaxed">{retroalimentacionFinal}</p>
+          </div>
+        )}
 
         {/* Stats */}
         <div className="grid grid-cols-3 gap-3 mb-6">
@@ -819,6 +936,7 @@ export default function Jugar() {
         tiempoUsado={resultado?.tiempo ?? 0}
         puntos={resultado?.puntos ?? 0}
         sesionId={sesion?.id}
+        retroalimentacionFinal={escapeRoom?.retroalimentacion_final}
       />
     )
   }

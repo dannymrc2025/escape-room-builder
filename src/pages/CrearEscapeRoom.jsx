@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   ChevronLeft, ChevronRight, Check, Loader2,
   Swords, Search, Rocket, Sparkles, RefreshCw,
-  BookOpen, Clock, MapPin, FileText, Wand2,
+  BookOpen, Clock, MapPin, FileText, Wand2, Trophy, Unlock,
   Plus, Trash2, Upload, Download, AlertCircle,
   Table2, PenLine, X
 } from 'lucide-react'
@@ -160,10 +160,48 @@ function Paso1({ datos, setDatos, errores }) {
 // ─── Paso 2: Historia con IA ──────────────────────────────────
 function Paso2({ datos, setDatos }) {
   const [generando, setGenerando] = useState(false)
+  const [generandoCierre, setGenerandoCierre] = useState(false)
   const [error, setError] = useState('')
 
   const setTono = (tono) => setDatos((d) => ({ ...d, tono }))
   const setHistoria = (historia) => setDatos((d) => ({ ...d, historia }))
+
+  const generarCierre = async () => {
+    setGenerandoCierre(true)
+    try {
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': import.meta.env.VITE_ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-5',
+          max_tokens: 300,
+          system:
+            'Eres un escritor creativo para escape rooms educativos de matemáticas. ' +
+            'Escribe un mensaje de cierre épico de 60-80 palabras para cuando el jugador completa el escape room. ' +
+            'Debe celebrar la victoria, cerrar la historia y destacar los logros matemáticos. ' +
+            'Solo devuelve el texto, sin títulos ni comillas.',
+          messages: [{
+            role: 'user',
+            content:
+              `Escape room: "${datos.nombre}". Tema: ${datos.tema}. Nivel: ${datos.nivel}. ` +
+              `Historia: ${datos.historia || '(sin historia)'}`,
+          }],
+        }),
+      })
+      if (!resp.ok) throw new Error(`Error ${resp.status}`)
+      const json = await resp.json()
+      setDatos((d) => ({ ...d, retroalimentacion_final: json.content?.[0]?.text ?? '' }))
+    } catch {
+      // silently fail — user can type manually
+    } finally {
+      setGenerandoCierre(false)
+    }
+  }
 
   const generarHistoria = async () => {
     setGenerando(true)
@@ -231,6 +269,33 @@ function Paso2({ datos, setDatos }) {
           className="w-full border border-gray-200 bg-white rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-300 transition leading-relaxed"
         />
         <p className="text-xs text-gray-400">Puedes escribirla manualmente o usar la IA para generarla.</p>
+      </div>
+
+      {/* Retroalimentación final */}
+      <div className="space-y-2">
+        <p className="text-sm font-semibold text-gray-700 flex items-center gap-1">
+          <Trophy className="w-4 h-4 text-yellow-500" /> Mensaje de cierre
+          <span className="text-xs font-normal text-gray-400 ml-1">— al completar todas las estaciones</span>
+        </p>
+        <textarea
+          value={datos.retroalimentacion_final}
+          onChange={(e) => setDatos((d) => ({ ...d, retroalimentacion_final: e.target.value }))}
+          rows={3}
+          placeholder="Escribe el mensaje épico que verán al completar... (opcional)"
+          className="w-full border border-gray-200 bg-white rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-yellow-300 transition leading-relaxed"
+        />
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-gray-400">Aparecerá en la pantalla de victoria.</p>
+          <button
+            onClick={generarCierre}
+            disabled={generandoCierre}
+            className="flex items-center gap-1.5 text-xs font-semibold text-yellow-600 hover:text-yellow-500 border border-yellow-200 hover:border-yellow-400 px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+          >
+            {generandoCierre
+              ? <><Loader2 className="w-3 h-3 animate-spin" /> Generando...</>
+              : <><Wand2 className="w-3 h-3" /> Generar con IA</>}
+          </button>
+        </div>
       </div>
 
       {/* Selector de tono */}
@@ -318,14 +383,65 @@ function parseCSV(text) {
   return { errores, estaciones: errores.length > 0 ? [] : estaciones }
 }
 
-const EST_VACIA = () => ({ numero: 1, titulo: '', problema: '', respuesta: '', pista_1: '', pista_2: '', puntos: 100 })
+const EST_VACIA = () => ({ numero: 1, titulo: '', problema: '', respuesta: '', pista_1: '', pista_2: '', puntos: 100, mini_historia: '', retroalimentacion: '' })
 
 // ─── Paso 3: Estaciones ────────────────────────────────────────
-function Paso3({ estaciones, setEstaciones, errorPaso }) {
+function Paso3({ estaciones, setEstaciones, errorPaso, datos }) {
   const [tab, setTab] = useState('csv')
   const [arrastrando, setArrastrando] = useState(false)
   const [erroresCSV, setErroresCSV] = useState([])
   const [preview, setPreview] = useState([])
+  const [generandoNarrativa, setGenerandoNarrativa] = useState(false)
+  const [errorNarrativa, setErrorNarrativa] = useState('')
+
+  const generarNarrativa = async () => {
+    if (estaciones.length === 0) return
+    setGenerandoNarrativa(true)
+    setErrorNarrativa('')
+    try {
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': import.meta.env.VITE_ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-5',
+          max_tokens: 2500,
+          system:
+            'Eres un escritor creativo para escape rooms educativos de matemáticas. ' +
+            'Para cada estación genera: mini_historia (50-70 palabras que contextualizan el problema y sumergen al jugador en la narrativa) ' +
+            'y retroalimentacion (35-50 palabras que celebran el éxito y sirven de puente narrativo a la siguiente estación, o de cierre épico si es la última). ' +
+            'Responde SOLO con JSON válido sin markdown: [{"numero":1,"mini_historia":"...","retroalimentacion":"..."}, ...]',
+          messages: [{
+            role: 'user',
+            content:
+              `Escape room: "${datos?.nombre || 'Sin nombre'}". Tema: ${datos?.tema || ''}. ` +
+              `Nivel: ${datos?.nivel || ''}. Tono: ${datos?.tono || 'aventura'}.\n` +
+              `Historia de introducción: ${datos?.historia || '(sin historia)'}\n\n` +
+              `Estaciones:\n${JSON.stringify(estaciones.map((e) => ({ numero: e.numero, titulo: e.titulo, problema: e.problema })))}`,
+          }],
+        }),
+      })
+      if (!resp.ok) throw new Error(`Error ${resp.status}`)
+      const json = await resp.json()
+      const generadas = JSON.parse(json.content?.[0]?.text ?? '[]')
+      setEstaciones((prev) =>
+        prev.map((e) => {
+          const gen = generadas.find((g) => g.numero === e.numero)
+          return gen
+            ? { ...e, mini_historia: gen.mini_historia || e.mini_historia, retroalimentacion: gen.retroalimentacion || e.retroalimentacion }
+            : e
+        })
+      )
+    } catch {
+      setErrorNarrativa('No se pudo generar la narrativa. Intenta de nuevo.')
+    } finally {
+      setGenerandoNarrativa(false)
+    }
+  }
 
   const descargarPlantilla = () => {
     const blob = new Blob([PLANTILLA_CSV], { type: 'text/csv' })
@@ -447,6 +563,19 @@ function Paso3({ estaciones, setEstaciones, errorPaso }) {
       {/* TAB MANUAL */}
       {tab === 'manual' && (
         <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-gray-500">Completa título, problema y respuesta. Los demás campos son opcionales.</p>
+            <button
+              onClick={generarNarrativa}
+              disabled={generandoNarrativa || estaciones.length === 0}
+              className="flex items-center gap-2 text-xs font-semibold text-violet-600 hover:text-violet-500 border border-violet-200 hover:border-violet-400 px-3 py-1.5 rounded-lg transition disabled:opacity-50 whitespace-nowrap"
+            >
+              {generandoNarrativa
+                ? <><Loader2 className="w-3 h-3 animate-spin" /> Generando...</>
+                : <><Wand2 className="w-3 h-3" /> Narrativa con IA</>}
+            </button>
+          </div>
+          {errorNarrativa && <p className="text-red-500 text-xs">{errorNarrativa}</p>}
           {estaciones.map((est, idx) => (
             <div key={idx} className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
               <div className="flex items-center justify-between">
@@ -500,6 +629,26 @@ function Paso3({ estaciones, setEstaciones, errorPaso }) {
                     onChange={(e) => updateEst(idx, 'puntos', Number(e.target.value))}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
                 </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-violet-600 mb-1 block flex items-center gap-1">
+                  <BookOpen className="w-3 h-3" /> Mini-historia
+                  <span className="text-gray-400 font-normal">(opcional — aparece antes del ejercicio)</span>
+                </label>
+                <textarea value={est.mini_historia} rows={2}
+                  placeholder="Narrativa que contextualiza el problema y sumerge al jugador..."
+                  onChange={(e) => updateEst(idx, 'mini_historia', e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-300" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-green-600 mb-1 block flex items-center gap-1">
+                  <Unlock className="w-3 h-3" /> Retroalimentación
+                  <span className="text-gray-400 font-normal">(opcional — aparece al resolver correctamente)</span>
+                </label>
+                <textarea value={est.retroalimentacion} rows={2}
+                  placeholder="Mensaje de celebración y puente narrativo a la siguiente estación..."
+                  onChange={(e) => updateEst(idx, 'retroalimentacion', e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-green-300" />
               </div>
             </div>
           ))}
@@ -587,7 +736,7 @@ function Paso4({ datos, estaciones, errorGuardar }) {
 const DATOS_INICIALES = {
   nombre: '', tema: '', nivel: '', descripcion: '',
   tiempo_limite: 30, num_estaciones: 5,
-  tono: '', historia: '',
+  tono: '', historia: '', retroalimentacion_final: '',
 }
 
 export default function CrearEscapeRoom() {
@@ -649,8 +798,9 @@ export default function CrearEscapeRoom() {
         tiempo_limite:  datos.tiempo_limite,
         num_estaciones: estaciones.length,
         tono:           datos.tono,
-        historia:       datos.historia,
-        estado:         'inactivo',
+        historia:              datos.historia,
+        retroalimentacion_final: datos.retroalimentacion_final,
+        estado:                'inactivo',
         archivado:      false,
       })
       .select('id')
@@ -706,7 +856,7 @@ export default function CrearEscapeRoom() {
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 sm:p-8">
           {paso === 0 && <Paso1 datos={datos} setDatos={setDatos} errores={errores} />}
           {paso === 1 && <Paso2 datos={datos} setDatos={setDatos} />}
-          {paso === 2 && <Paso3 estaciones={estaciones} setEstaciones={setEstaciones} errorPaso={errorPaso3} />}
+          {paso === 2 && <Paso3 estaciones={estaciones} setEstaciones={setEstaciones} errorPaso={errorPaso3} datos={datos} />}
           {paso === 3 && <Paso4 datos={datos} estaciones={estaciones} errorGuardar={errorGuardar} />}
 
           {/* Navegación */}
