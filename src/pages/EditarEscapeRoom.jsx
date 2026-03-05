@@ -5,7 +5,7 @@ import {
   Swords, Search, Rocket, Sparkles,
   BookOpen, Clock, MapPin, FileText, Wand2, Trophy, Unlock,
   Plus, Trash2, Upload, Download, AlertCircle,
-  Table2, PenLine, Save
+  Table2, PenLine, Save, X, Image as ImageIcon
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 
@@ -136,7 +136,7 @@ function Paso1({ datos, setDatos, errores }) {
 }
 
 // ─── Paso 2 ────────────────────────────────────────────────────
-function Paso2({ datos, setDatos }) {
+function Paso2({ datos, setDatos, imagenPortada, setImagenPortada, imagenActualUrl }) {
   const [generando, setGenerando] = useState(false)
   const [generandoCierre, setGenerandoCierre] = useState(false)
   const [error, setError] = useState('')
@@ -197,6 +197,46 @@ function Paso2({ datos, setDatos }) {
         <h2 className="text-xl font-bold text-gray-800 mb-1">Historia de introducción</h2>
         <p className="text-sm text-gray-500">Edita la historia o genera una nueva con IA.</p>
       </div>
+
+      {/* Imagen de portada */}
+      <div className="space-y-2">
+        <p className="text-sm font-semibold text-gray-700 flex items-center gap-1">
+          <ImageIcon className="w-4 h-4 text-blue-500" /> Imagen de portada
+          <span className="text-xs text-gray-400 font-normal">(opcional — fondo de la introducción)</span>
+        </p>
+        {imagenPortada ? (
+          <div className="relative rounded-xl overflow-hidden border border-gray-200" style={{ aspectRatio: '16/9' }}>
+            <img src={URL.createObjectURL(imagenPortada)} alt="Portada" className="w-full h-full object-cover" />
+            <button onClick={() => setImagenPortada(null)}
+              className="absolute top-2 right-2 bg-gray-900/70 hover:bg-red-600 text-white rounded-full p-1 transition">
+              <X className="w-4 h-4" />
+            </button>
+            <span className="absolute bottom-2 left-2 bg-gray-900/60 text-white text-xs px-2 py-0.5 rounded-full">{imagenPortada.name}</span>
+          </div>
+        ) : imagenActualUrl ? (
+          <div className="relative rounded-xl overflow-hidden border border-gray-200" style={{ aspectRatio: '16/9' }}>
+            <img src={imagenActualUrl} alt="Portada actual" className="w-full h-full object-cover" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-950/40 opacity-0 hover:opacity-100 transition gap-2">
+              <button onClick={() => document.getElementById('portada-input-editar').click()}
+                className="bg-white/90 text-gray-800 text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-white transition">
+                Cambiar imagen
+              </button>
+            </div>
+            <input id="portada-input-editar" type="file" accept="image/jpeg,image/png" className="hidden"
+              onChange={(e) => { const f = e.target.files[0]; if (f && f.size <= 5 * 1024 * 1024) setImagenPortada(f); e.target.value = '' }} />
+          </div>
+        ) : (
+          <div onClick={() => document.getElementById('portada-input-editar').click()}
+            className="border-2 border-dashed border-gray-300 bg-gray-50 hover:border-blue-400 hover:bg-blue-50 rounded-xl cursor-pointer transition flex flex-col items-center gap-2 py-8">
+            <ImageIcon className="w-8 h-8 text-gray-400" />
+            <p className="text-sm text-gray-500">Haz clic para subir una imagen</p>
+            <p className="text-xs text-gray-400">JPG o PNG · recomendado 1600×900px · máx. 5MB</p>
+            <input id="portada-input-editar" type="file" accept="image/jpeg,image/png" className="hidden"
+              onChange={(e) => { const f = e.target.files[0]; if (f && f.size <= 5 * 1024 * 1024) setImagenPortada(f); e.target.value = '' }} />
+          </div>
+        )}
+      </div>
+
       <div className="space-y-2">
         <p className="text-sm font-semibold text-gray-700 flex items-center gap-1"><BookOpen className="w-4 h-4 text-violet-500" /> Historia</p>
         <textarea value={datos.historia} onChange={(e) => setHistoria(e.target.value)} rows={6}
@@ -550,6 +590,8 @@ export default function EditarEscapeRoom() {
   const [errorGuardar, setErrorGuardar] = useState('')
   const [cargando, setCargando] = useState(true)
   const [toast, setToast] = useState(false)
+  const [imagenPortada, setImagenPortada] = useState(null)
+  const [imagenActualUrl, setImagenActualUrl] = useState(null)
 
   // Cargar datos existentes
   useEffect(() => {
@@ -567,6 +609,7 @@ export default function EditarEscapeRoom() {
         historia:               room.historia ?? '',
         retroalimentacion_final: room.retroalimentacion_final ?? '',
       })
+      setImagenActualUrl(room.imagen_portada ?? null)
       const { data: ests } = await supabase.from('estaciones').select('*').eq('escape_room_id', id).order('numero')
       setEstaciones(ests ?? [])
       setCargando(false)
@@ -600,6 +643,21 @@ export default function EditarEscapeRoom() {
 
   const guardar = async () => {
     setGuardando(true); setErrorGuardar('')
+
+    // Subir nueva imagen si se seleccionó una
+    let nuevaImagenUrl = imagenActualUrl
+    if (imagenPortada) {
+      const ext = imagenPortada.name.split('.').pop()
+      const fileName = `${Date.now()}.${ext}`
+      const { data: uploadData, error: uploadErr } = await supabase.storage
+        .from('portadas')
+        .upload(`public/${fileName}`, imagenPortada, { contentType: imagenPortada.type, upsert: true })
+      if (!uploadErr && uploadData?.path) {
+        const { data: urlData } = supabase.storage.from('portadas').getPublicUrl(uploadData.path)
+        nuevaImagenUrl = urlData.publicUrl
+      }
+    }
+
     // Actualizar escape room
     const { error: errRoom } = await supabase.from('escape_rooms').update({
       nombre:         datos.nombre,
@@ -611,6 +669,7 @@ export default function EditarEscapeRoom() {
       tono:           datos.tono,
       historia:               datos.historia,
       retroalimentacion_final: datos.retroalimentacion_final,
+      imagen_portada:         nuevaImagenUrl,
     }).eq('id', id)
 
     if (errRoom) { setErrorGuardar(`Error: ${errRoom.message}`); setGuardando(false); return }
@@ -655,7 +714,7 @@ export default function EditarEscapeRoom() {
         <BarraProgreso paso={paso} />
         <div className="bg-white border border-gray-100 rounded-2xl p-6 sm:p-8 shadow-sm">
           {paso === 0 && <Paso1 datos={datos} setDatos={setDatos} errores={errores} />}
-          {paso === 1 && <Paso2 datos={datos} setDatos={setDatos} />}
+          {paso === 1 && <Paso2 datos={datos} setDatos={setDatos} imagenPortada={imagenPortada} setImagenPortada={setImagenPortada} imagenActualUrl={imagenActualUrl} />}
           {paso === 2 && <Paso3 estaciones={estaciones} setEstaciones={setEstaciones} errorPaso={errorPaso3} datos={datos} />}
           {paso === 3 && <Paso4 datos={datos} estaciones={estaciones} errorGuardar={errorGuardar} />}
 
