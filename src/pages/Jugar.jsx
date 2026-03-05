@@ -315,7 +315,7 @@ function PantallaEntrada({ estadoInicial, onUnirse }) {
 }
 
 // ─── Pantalla 2: Historia ──────────────────────────────────────
-function PantallaHistoria({ historia, nombreRoom, onComenzar }) {
+function PantallaHistoria({ historia, nombreRoom, onComenzar, portadaUrl }) {
   const [texto, setTexto] = useState('')
   const [listo, setListo] = useState(false)
 
@@ -332,8 +332,15 @@ function PantallaHistoria({ historia, nombreRoom, onComenzar }) {
   }, [historia])
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-violet-950 flex items-center justify-center px-4">
-      <div className="w-full max-w-lg text-center">
+    <div className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden">
+      {portadaUrl
+        ? <>
+            <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${portadaUrl})` }} />
+            <div className="absolute inset-0 bg-gray-950/80" />
+          </>
+        : <div className="absolute inset-0 bg-gradient-to-br from-gray-950 via-gray-900 to-violet-950" />
+      }
+      <div className="relative z-10 w-full max-w-lg text-center">
         <div className="inline-flex bg-violet-500/20 border border-violet-400/30 rounded-full p-4 mb-5">
           <Lock className="w-10 h-10 text-violet-300" />
         </div>
@@ -925,6 +932,7 @@ export default function Jugar() {
         historia={escapeRoom?.historia}
         nombreRoom={escapeRoom?.nombre ?? 'Escape Room'}
         onComenzar={() => setPantalla('juego')}
+        portadaUrl={escapeRoom?.imagen_portada}
       />
     )
   }
