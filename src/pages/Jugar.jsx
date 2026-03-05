@@ -376,7 +376,8 @@ function PantallaJuego({ sesion, escapeRoom, equipo: equipoInicial, estaciones, 
   const [shake, setShake] = useState(false)
   const [abriendo, setAbriendo] = useState(false)
   const [pistaTexto, setPistaTexto] = useState(null)
-  const [pistaVista, setPistaVista] = useState(false)
+  const [pista1Vista, setPista1Vista] = useState(false)
+  const [pista2Vista, setPista2Vista] = useState(false)
   const [puntosAcumulados, setPuntosAcumulados] = useState(0)
   const [tiempoRestante, setTiempoRestante] = useState((escapeRoom?.tiempo_limite ?? 30) * 60)
   const [finalizando, setFinalizando] = useState(false)
@@ -396,7 +397,8 @@ function PantallaJuego({ sesion, escapeRoom, equipo: equipoInicial, estaciones, 
   // Avanza a la siguiente estación mostrando mini_historia si existe
   const avanzarAEstacion = (nextIdx) => {
     setPistaTexto(null)
-    setPistaVista(false)
+    setPista1Vista(false)
+    setPista2Vista(false)
     setRespuesta('')
     setIntentos(0)
     setIndice(nextIdx)
@@ -510,13 +512,17 @@ function PantallaJuego({ sesion, escapeRoom, equipo: equipoInicial, estaciones, 
     }
   }
 
-  const verPista = () => {
-    if (pistaVista) return
+  const verPista = (num) => {
     const est = estaciones[indice]
-    const pista = (intentos >= 1 && est?.pista_2) ? est.pista_2 : est?.pista_1
-    setPistaTexto(pista || 'No hay pistas disponibles para esta estación.')
-    setPistaVista(true)
-    setTiempoRestante((t) => Math.max(0, t - 20))
+    if (num === 1 && !pista1Vista) {
+      setPistaTexto(est?.pista_1 || 'No hay pista disponible.')
+      setPista1Vista(true)
+      setTiempoRestante((t) => Math.max(0, t - 20))
+    } else if (num === 2 && !pista2Vista) {
+      setPistaTexto(est?.pista_2 || 'No hay segunda pista disponible.')
+      setPista2Vista(true)
+      setTiempoRestante((t) => Math.max(0, t - 20))
+    }
   }
 
   if (finalizando) {
@@ -687,13 +693,22 @@ function PantallaJuego({ sesion, escapeRoom, equipo: equipoInicial, estaciones, 
                   >
                     <Check className="w-4 h-4" /> Verificar
                   </button>
-                  {intentos >= 2 && !pistaVista && est.pista_1 && (
+                  {intentos >= 3 && !pista1Vista && est.pista_1 && (
                     <button
-                      onClick={verPista}
+                      onClick={() => verPista(1)}
                       className="flex items-center gap-1.5 text-sm font-medium text-amber-300 hover:text-amber-200 border border-amber-500/40 hover:border-amber-400 px-3 rounded-xl transition whitespace-nowrap"
                     >
-                      <Eye className="w-4 h-4" /> Pista
+                      <Eye className="w-4 h-4" /> Pista 1
                       <span className="text-xs text-amber-600">-20s</span>
+                    </button>
+                  )}
+                  {intentos >= 5 && !pista2Vista && est.pista_2 && (
+                    <button
+                      onClick={() => verPista(2)}
+                      className="flex items-center gap-1.5 text-sm font-medium text-orange-300 hover:text-orange-200 border border-orange-500/40 hover:border-orange-400 px-3 rounded-xl transition whitespace-nowrap"
+                    >
+                      <Eye className="w-4 h-4" /> Pista 2
+                      <span className="text-xs text-orange-600">-20s</span>
                     </button>
                   )}
                 </div>
@@ -701,7 +716,8 @@ function PantallaJuego({ sesion, escapeRoom, equipo: equipoInicial, estaciones, 
                 {intentos > 0 && (
                   <p className="text-xs text-gray-500 mt-2.5 text-center">
                     {intentos} intento{intentos !== 1 ? 's' : ''} incorrecto{intentos !== 1 ? 's' : ''}
-                    {intentos >= 2 && !pistaVista && est.pista_1 && ' • Puedes solicitar una pista'}
+                    {intentos >= 3 && !pista1Vista && est.pista_1 && ' • Puedes solicitar la pista 1'}
+                    {intentos >= 5 && !pista2Vista && est.pista_2 && ' • Puedes solicitar la pista 2'}
                   </p>
                 )}
               </>
