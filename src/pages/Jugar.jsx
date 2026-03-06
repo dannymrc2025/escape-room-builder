@@ -463,22 +463,26 @@ function PantallaJuego({ sesion, escapeRoom, equipo: equipoInicial, estaciones, 
     const pts = puntosAcumulados
     const idx = Math.min(indice, estaciones.length)
     ;(async () => {
-      await supabase.from('resultados_finales').insert({
-        sesion_id: sesion.id,
-        equipo_id: equipoInicial.id,
-        tiempo_total: tiempoUsado,
-        puntos_total: pts,
-      })
-      await supabase.from('equipos').update({
-        estaciones_resueltas: idx,
-        estacion_actual: Math.min(idx + 1, estaciones.length),
-        intentos_totales: intentosTotalesRef.current,
-      }).eq('id', equipoInicial.id)
+      try {
+        await supabase.from('resultados_finales').insert({
+          sesion_id: sesion.id,
+          equipo_id: equipoInicial.id,
+          tiempo_total: tiempoUsado,
+          puntos_total: pts,
+        })
+        await supabase.from('equipos').update({
+          estaciones_resueltas: idx,
+          estacion_actual: Math.min(idx + 1, estaciones.length),
+          intentos_totales: intentosTotalesRef.current,
+        }).eq('id', equipoInicial.id)
+      } catch (_) {
+        // Si falla la BD, igual mostramos el resultado al alumno
+      }
       onTerminar(tiempoUsado, pts)
     })()
   }, [finalizando]) // eslint-disable-line
 
-  const verificar = async () => {
+  const verificar = () => {
     if (!respuesta.trim() || abriendo || finalizando) return
     const est = estaciones[indice]
     if (!est) return
@@ -486,7 +490,8 @@ function PantallaJuego({ sesion, escapeRoom, equipo: equipoInicial, estaciones, 
     const correc = normalizar(respuesta) === normalizar(est.respuesta)
     intentosTotalesRef.current += 1
 
-    await supabase.from('progreso').insert({
+    // Fire-and-forget: no bloqueamos la UI esperando la BD
+    supabase.from('progreso').insert({
       sesion_id: sesion.id,
       equipo_id: equipoInicial.id,
       estacion_id: est.id,
@@ -495,9 +500,10 @@ function PantallaJuego({ sesion, escapeRoom, equipo: equipoInicial, estaciones, 
     })
 
     if (correc) {
-      const pts = Math.max(0, (est.puntos ?? 100) - (pistaVista ? 20 : 0))
+      const pts = Math.max(0, (est.puntos ?? 100) - (pista1Vista || pista2Vista ? 20 : 0))
       setPuntosAcumulados((p) => p + pts)
-      await supabase.from('equipos').update({
+      // Fire-and-forget: actualizar equipo en BD
+      supabase.from('equipos').update({
         estaciones_resueltas: indice + 1,
         estacion_actual: Math.min(indice + 2, estaciones.length),
       }).eq('id', equipoInicial.id)
@@ -674,7 +680,7 @@ function PantallaJuego({ sesion, escapeRoom, equipo: equipoInicial, estaciones, 
                 </div>
                 <p className="text-green-400 font-bold text-xl">¡Correcto!</p>
                 <p className="text-green-600 text-sm">
-                  +{Math.max(0, (est.puntos ?? 100) - (pistaVista ? 20 : 0))} puntos
+                  +{Math.max(0, (est.puntos ?? 100) - (pista1Vista || pista2Vista ? 20 : 0))} puntos
                 </p>
               </div>
             ) : (

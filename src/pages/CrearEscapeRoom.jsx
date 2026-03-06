@@ -897,10 +897,13 @@ export default function CrearEscapeRoom() {
       const { data: uploadData, error: uploadErr } = await supabase.storage
         .from('portadas')
         .upload(`public/${fileName}`, imagenPortada, { contentType: imagenPortada.type, upsert: true })
-      if (!uploadErr && uploadData?.path) {
-        const { data: urlData } = supabase.storage.from('portadas').getPublicUrl(uploadData.path)
-        imagenPortadaUrl = urlData.publicUrl
+      if (uploadErr || !uploadData?.path) {
+        setErrorGuardar(`Error al subir la imagen: ${uploadErr?.message ?? 'respuesta inesperada del servidor'}. Verifica que el bucket "portadas" exista y sea público en Supabase.`)
+        setGuardando(false)
+        return
       }
+      const { data: urlData } = supabase.storage.from('portadas').getPublicUrl(uploadData.path)
+      imagenPortadaUrl = urlData.publicUrl
     }
 
     const { data: roomData, error: errRoom } = await supabase
