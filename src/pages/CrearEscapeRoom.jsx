@@ -431,7 +431,7 @@ function parseCSV(text) {
   return { errores, estaciones: errores.length > 0 ? [] : estaciones }
 }
 
-const EST_VACIA = () => ({ numero: 1, titulo: '', problema: '', respuesta: '', pista_1: '', pista_2: '', puntos: 100, mini_historia: '', retroalimentacion: '' })
+const EST_VACIA = () => ({ numero: 1, titulo: '', problema: '', respuesta: '', pista_1: '', pista_2: '', puntos: 100, retroalimentacion: '' })
 
 // ─── Paso 3: Estaciones ────────────────────────────────────────
 function Paso3({ estaciones, setEstaciones, errorPaso, datos }) {
@@ -460,9 +460,8 @@ function Paso3({ estaciones, setEstaciones, errorPaso, datos }) {
           max_tokens: 2500,
           system:
             'Eres un escritor creativo para escape rooms educativos de matemáticas. ' +
-            'Para cada estación genera: mini_historia (50-70 palabras que contextualizan el problema y sumergen al jugador en la narrativa) ' +
-            'y retroalimentacion (35-50 palabras que celebran el éxito y sirven de puente narrativo a la siguiente estación, o de cierre épico si es la última). ' +
-            'Responde SOLO con JSON válido sin markdown: [{"numero":1,"mini_historia":"...","retroalimentacion":"..."}, ...]',
+            'Para cada estación genera: retroalimentacion (35-50 palabras que celebran el éxito y sirven de puente narrativo a la siguiente estación, o de cierre épico si es la última). ' +
+            'Responde SOLO con JSON válido sin markdown: [{"numero":1,"retroalimentacion":"..."}, ...]',
           messages: [{
             role: 'user',
             content:
@@ -480,7 +479,7 @@ function Paso3({ estaciones, setEstaciones, errorPaso, datos }) {
         prev.map((e) => {
           const gen = generadas.find((g) => g.numero === e.numero)
           return gen
-            ? { ...e, mini_historia: gen.mini_historia || e.mini_historia, retroalimentacion: gen.retroalimentacion || e.retroalimentacion }
+            ? { ...e, retroalimentacion: gen.retroalimentacion || e.retroalimentacion }
             : e
         })
       )
@@ -604,56 +603,6 @@ function Paso3({ estaciones, setEstaciones, errorPaso, datos }) {
                 </table>
               </div>
 
-              {/* ── Mini-historias por estación ── */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-bold text-violet-700 flex items-center gap-1.5">
-                    <BookOpen className="w-4 h-4" /> Mini-historias por estación
-                    <span className="text-xs text-gray-400 font-normal">(aparecen antes de cada ejercicio)</span>
-                  </p>
-                  <button
-                    onClick={generarNarrativa}
-                    disabled={generandoNarrativa || estaciones.length === 0}
-                    className="flex items-center gap-2 text-xs font-semibold text-violet-600 hover:text-violet-500 border border-violet-200 hover:border-violet-400 px-3 py-1.5 rounded-lg transition disabled:opacity-50 whitespace-nowrap"
-                  >
-                    {generandoNarrativa
-                      ? <><Loader2 className="w-3 h-3 animate-spin" /> Generando...</>
-                      : <><Wand2 className="w-3 h-3" /> Generar con IA</>}
-                  </button>
-                </div>
-                {errorNarrativa && <p className="text-red-500 text-xs">{errorNarrativa}</p>}
-                {estaciones.map((e, idx) => (
-                  <div key={idx} className="bg-violet-50 border border-violet-100 rounded-xl p-4 space-y-3">
-                    <p className="text-xs font-bold text-violet-700">Estación {e.numero} — {e.titulo}</p>
-                    <div>
-                      <label className="text-xs font-semibold text-violet-600 mb-1 block flex items-center gap-1">
-                        <BookOpen className="w-3 h-3" /> Mini-historia
-                        <span className="text-gray-400 font-normal">(aparece antes del ejercicio)</span>
-                      </label>
-                      <textarea
-                        value={e.mini_historia || ''}
-                        rows={2}
-                        placeholder="Narrativa que contextualiza el problema y sumerge al jugador..."
-                        onChange={(ev) => updateEst(idx, 'mini_historia', ev.target.value)}
-                        className="w-full border border-violet-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-300 bg-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-green-600 mb-1 block flex items-center gap-1">
-                        <Unlock className="w-3 h-3" /> Retroalimentación
-                        <span className="text-gray-400 font-normal">(aparece al resolver correctamente)</span>
-                      </label>
-                      <textarea
-                        value={e.retroalimentacion || ''}
-                        rows={2}
-                        placeholder="Mensaje de celebración y puente narrativo a la siguiente estación..."
-                        onChange={(ev) => updateEst(idx, 'retroalimentacion', ev.target.value)}
-                        className="w-full border border-green-100 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-green-300 bg-white"
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
           )}
         </div>
@@ -728,16 +677,6 @@ function Paso3({ estaciones, setEstaciones, errorPaso, datos }) {
                     onChange={(e) => updateEst(idx, 'puntos', Number(e.target.value))}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
                 </div>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-violet-600 mb-1 block flex items-center gap-1">
-                  <BookOpen className="w-3 h-3" /> Mini-historia
-                  <span className="text-gray-400 font-normal">(opcional — aparece antes del ejercicio)</span>
-                </label>
-                <textarea value={est.mini_historia} rows={2}
-                  placeholder="Narrativa que contextualiza el problema y sumerge al jugador..."
-                  onChange={(e) => updateEst(idx, 'mini_historia', e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-300" />
               </div>
               <div>
                 <label className="text-xs font-semibold text-green-600 mb-1 block flex items-center gap-1">

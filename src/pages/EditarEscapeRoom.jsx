@@ -325,9 +325,8 @@ function Paso3({ estaciones, setEstaciones, errorPaso, datos }) {
           max_tokens: 2500,
           system:
             'Eres un escritor creativo para escape rooms educativos de matemáticas. ' +
-            'Para cada estación genera: mini_historia (50-70 palabras que contextualizan el problema y sumergen al jugador en la narrativa) ' +
-            'y retroalimentacion (35-50 palabras que celebran el éxito y sirven de puente narrativo a la siguiente estación, o de cierre épico si es la última). ' +
-            'Responde SOLO con JSON válido sin markdown: [{"numero":1,"mini_historia":"...","retroalimentacion":"..."}, ...]',
+            'Para cada estación genera: retroalimentacion (35-50 palabras que celebran el éxito y sirven de puente narrativo a la siguiente estación, o de cierre épico si es la última). ' +
+            'Responde SOLO con JSON válido sin markdown: [{"numero":1,"retroalimentacion":"..."}, ...]',
           messages: [{
             role: 'user',
             content:
@@ -345,7 +344,7 @@ function Paso3({ estaciones, setEstaciones, errorPaso, datos }) {
         prev.map((e) => {
           const gen = generadas.find((g) => g.numero === e.numero)
           return gen
-            ? { ...e, mini_historia: gen.mini_historia || e.mini_historia, retroalimentacion: gen.retroalimentacion || e.retroalimentacion }
+            ? { ...e, retroalimentacion: gen.retroalimentacion || e.retroalimentacion }
             : e
         })
       )
@@ -380,7 +379,7 @@ function Paso3({ estaciones, setEstaciones, errorPaso, datos }) {
   const onDrop = (e) => { e.preventDefault(); setArrastrando(false); procesarArchivo(e.dataTransfer.files[0]) }
   const addEst = () => {
     const sig = estaciones.length > 0 ? Math.max(...estaciones.map((e) => e.numero)) + 1 : 1
-    setEstaciones((prev) => [...prev, { numero: sig, titulo: '', problema: '', respuesta: '', pista_1: '', pista_2: '', puntos: 100, mini_historia: '', retroalimentacion: '' }])
+    setEstaciones((prev) => [...prev, { numero: sig, titulo: '', problema: '', respuesta: '', pista_1: '', pista_2: '', puntos: 100, retroalimentacion: '' }])
   }
   const updateEst = (idx, key, val) => setEstaciones((prev) => prev.map((e, i) => i === idx ? { ...e, [key]: val } : e))
   const removeEst = (idx) => setEstaciones((prev) => prev.filter((_, i) => i !== idx))
@@ -484,16 +483,6 @@ function Paso3({ estaciones, setEstaciones, errorPaso, datos }) {
                   <input type="number" value={est.puntos} min={0} onChange={(e) => updateEst(idx, 'puntos', Number(e.target.value))}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
                 </div>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-violet-600 mb-1 block flex items-center gap-1">
-                  <BookOpen className="w-3 h-3" /> Mini-historia
-                  <span className="text-gray-400 font-normal">(opcional — aparece antes del ejercicio)</span>
-                </label>
-                <textarea value={est.mini_historia || ''} rows={2}
-                  placeholder="Narrativa que contextualiza el problema y sumerge al jugador..."
-                  onChange={(e) => updateEst(idx, 'mini_historia', e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-300" />
               </div>
               <div>
                 <label className="text-xs font-semibold text-green-600 mb-1 block flex items-center gap-1">
@@ -683,7 +672,6 @@ export default function EditarEscapeRoom() {
       numero: e.numero, titulo: e.titulo, problema: e.problema,
       respuesta: e.respuesta, pista_1: e.pista_1, pista_2: e.pista_2,
       puntos: e.puntos, escape_room_id: id,
-      mini_historia: e.mini_historia || '',
       retroalimentacion: e.retroalimentacion || '',
     }))
     const { error: errEst } = await supabase.from('estaciones').insert(rows)

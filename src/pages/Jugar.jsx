@@ -388,20 +388,15 @@ function PantallaJuego({ sesion, escapeRoom, equipo: equipoInicial, estaciones, 
   const [puntosAcumulados, setPuntosAcumulados] = useState(0)
   const [tiempoRestante, setTiempoRestante] = useState((escapeRoom?.tiempo_limite ?? 30) * 60)
   const [finalizando, setFinalizando] = useState(false)
-  // 'intro' = mini-historia antes del ejercicio | 'retro' = retroalim. al resolver | null = ejercicio
-  const [pantallaExtra, setPantallaExtra] = useState(() =>
-    estaciones[0]?.mini_historia ? 'intro' : null
-  )
-  const [textoExtra, setTextoExtra] = useState(() =>
-    estaciones[0]?.mini_historia || ''
-  )
+  // 'retro' = retroalim. al resolver | null = ejercicio
+  const [pantallaExtra, setPantallaExtra] = useState(null)
+  const [textoExtra, setTextoExtra] = useState('')
 
   const timerRef = useRef(null)
   const finalizadoRef = useRef(false)
   const intentosTotalesRef = useRef(0)
   const inputRef = useRef()
 
-  // Avanza a la siguiente estación mostrando mini_historia si existe
   const avanzarAEstacion = (nextIdx) => {
     setPistaTexto(null)
     setPista1Vista(false)
@@ -409,26 +404,13 @@ function PantallaJuego({ sesion, escapeRoom, equipo: equipoInicial, estaciones, 
     setRespuesta('')
     setIntentos(0)
     setIndice(nextIdx)
-    const nextEst = estaciones[nextIdx]
-    if (nextEst?.mini_historia) {
-      setPantallaExtra('intro')
-      setTextoExtra(nextEst.mini_historia)
-    } else {
-      setPantallaExtra(null)
-      setTextoExtra('')
-      setTimeout(() => inputRef.current?.focus(), 50)
-    }
+    setPantallaExtra(null)
+    setTextoExtra('')
+    setTimeout(() => inputRef.current?.focus(), 50)
   }
 
   const continuar = () => {
-    if (pantallaExtra === 'retro') {
-      avanzarAEstacion(indice + 1)
-    } else {
-      // intro
-      setPantallaExtra(null)
-      setTextoExtra('')
-      setTimeout(() => inputRef.current?.focus(), 50)
-    }
+    avanzarAEstacion(indice + 1)
   }
 
   // Start timer
@@ -490,23 +472,23 @@ function PantallaJuego({ sesion, escapeRoom, equipo: equipoInicial, estaciones, 
     const correc = normalizar(respuesta) === normalizar(est.respuesta)
     intentosTotalesRef.current += 1
 
-    // Fire-and-forget: no bloqueamos la UI esperando la BD
-    supabase.from('progreso').insert({
-      sesion_id: sesion.id,
-      equipo_id: equipoInicial.id,
-      estacion_id: est.id,
-      respuesta: respuesta.trim(),
-      correcto: correc,
-    })
-
     if (correc) {
       const pts = Math.max(0, (est.puntos ?? 100) - (pista1Vista || pista2Vista ? 20 : 0))
       setPuntosAcumulados((p) => p + pts)
-      // Fire-and-forget: actualizar equipo en BD
+      // Actualizar equipo primero; tras confirmar, insertar progreso
+      // (así el Monitor siempre ve estacion_actual actualizada antes de que llegue el evento de progreso)
       supabase.from('equipos').update({
         estaciones_resueltas: indice + 1,
         estacion_actual: Math.min(indice + 2, estaciones.length),
-      }).eq('id', equipoInicial.id)
+      }).eq('id', equipoInicial.id).then(() => {
+        supabase.from('progreso').insert({
+          sesion_id: sesion.id,
+          equipo_id: equipoInicial.id,
+          estacion_id: est.id,
+          respuesta: respuesta.trim(),
+          correcto: true,
+        })
+      })
       setAbriendo(true)
       setTimeout(() => {
         setAbriendo(false)
@@ -518,6 +500,14 @@ function PantallaJuego({ sesion, escapeRoom, equipo: equipoInicial, estaciones, 
         }
       }, 1400)
     } else {
+      // Respuesta incorrecta: registrar en progreso (fire-and-forget)
+      supabase.from('progreso').insert({
+        sesion_id: sesion.id,
+        equipo_id: equipoInicial.id,
+        estacion_id: est.id,
+        respuesta: respuesta.trim(),
+        correcto: false,
+      })
       setIntentos((n) => n + 1)
       setShake(true)
       setRespuesta('')
@@ -557,44 +547,6 @@ function PantallaJuego({ sesion, escapeRoom, equipo: equipoInicial, estaciones, 
     : tiempoRestante < 300
     ? 'text-amber-400'
     : 'text-green-400'
-
-  // ── Pantalla de mini-historia ─────────────────────────────────
-  if (pantallaExtra === 'intro') {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-violet-950 flex flex-col">
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-white/10">
-          <span className="text-sm font-semibold text-gray-300 truncate max-w-[30%]">{equipoInicial.nombre}</span>
-          <span className={`text-2xl sm:text-3xl font-extrabold tabular-nums ${colorTimer} ${tiempoRestante < 60 ? 'animate-pulse' : ''}`}>
-            {fmtTiempo(tiempoRestante)}
-          </span>
-          <span className="text-sm text-gray-400">{indice + 1} / {estaciones.length}</span>
-        </div>
-        <div className="w-full bg-gray-800 h-1">
-          <div className="bg-violet-500 h-1 transition-all duration-500" style={{ width: `${(indice / estaciones.length) * 100}%` }} />
-        </div>
-        <div className="flex-1 flex items-center justify-center px-4 py-8">
-          <div className="w-full max-w-lg text-center space-y-6">
-            <span className="bg-violet-500/20 border border-violet-400/30 text-violet-300 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide">
-              Estación {indice + 1} · {est.titulo}
-            </span>
-            <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm text-left">
-              <div className="flex items-center gap-2 mb-3">
-                <BookOpen className="w-5 h-5 text-violet-400 shrink-0" />
-                <span className="text-xs font-semibold text-violet-400 uppercase tracking-wide">Contexto de la misión</span>
-              </div>
-              <p className="text-gray-200 text-base leading-relaxed">{textoExtra}</p>
-            </div>
-            <button
-              onClick={continuar}
-              className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-8 py-3 rounded-xl transition flex items-center gap-2 mx-auto"
-            >
-              Comenzar ejercicio <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
 
   // ── Pantalla de retroalimentación ─────────────────────────────
   if (pantallaExtra === 'retro') {
