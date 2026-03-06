@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   Clock, Users, ChevronLeft, Pause, Play, Plus,
   Flag, Send, X, AlertTriangle, Wifi, WifiOff,
-  MapPin, Target, RefreshCw
+  MapPin, Target, RefreshCw, FileText, Download, Trophy
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 
@@ -15,7 +15,22 @@ function fmtTiempo(seg) {
   return `${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
 }
 
-function fmtTranscurrido(seg) {
+function fmtFecha(iso) {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('es-MX', {
+    year: 'numeric', month: 'long', day: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  })
+}
+
+// Extrae el grupo del nombre: "Juan (2A)" → "2A"  |  "Equipo [2A] · ..." → "2A"
+function extraerGrupo(nombre) {
+  const m1 = nombre?.match(/\(([^)]+)\)$/)
+  if (m1) return m1[1]
+  const m2 = nombre?.match(/\[([^\]]+)\]/)
+  if (m2) return m2[1]
+  return 'Sin grupo'
+}
   const s = Math.max(0, Math.floor(seg))
   const m = Math.floor(s / 60)
   const ss = s % 60
@@ -82,29 +97,175 @@ function ModalPista({ equipo, onClose, onEnviar }) {
   )
 }
 
-// ─── Modal confirmación finalizar ────────────────────────────
-function ModalFinalizar({ onConfirmar, onCancelar, cargando }) {
+// ─── Modal finalizar con descarga de PDFs ───────────────────
+const GRUPOS_PDF = ['Todos', '2A', '2C', '2D', '2F Leona']
+
+function ModalFinalizar({ sesionId, escapeRoomNombre, sesionCreatedAt, totalEstaciones, onConfirmar, onCancelar, cargando }) {
+  const [resultados, setResultados] = useState([])
+  const [loadingRes, setLoadingRes] = useState(true)
+  const [confirmando, setConfirmando] = useState(false)
+
+  useEffect(() => {
+    supabase
+      .from('resultados_finales')
+      .select('*, equipos(nombre, estaciones_resueltas, intentos_totales)')
+      .eq('sesion_id', sesionId)
+      .order('puntos_total', { ascending: false })
+      .order('tiempo_total', { ascending: true })
+      .then(({ data }) => { setResultados(data ?? []); setLoadingRes(false) })
+  }, [sesionId])
+
+  const generarPDF = (grupo) => {
+    const filtrados = grupo === 'Todos'
+      ? resultados
+      : resultados.filter((r) => extraerGrupo(r.equipos?.nombre) === grupo)
+
+    if (filtrados.length === 0) { alert(`No hay resultados para el grupo ${grupo}.`); return }
+
+    const filas = filtrados.map((r, i) => {
+      const medal = ['🥇', '🥈', '🥉'][i] ?? `${i + 1}`
+      return `<tr class="${i === 0 ? 'gold' : i % 2 === 0 ? 'even' : ''}">
+        <td style="text-align:center;font-size:18px">${medal}</td>
+        <td>${r.equipos?.nombre ?? '—'}</td>
+        <td style="text-align:center"><span class="badge">${r.puntos_total ?? 0} pts</span></td>
+        <td style="text-align:center">${fmtTiempo(r.tiempo_total)}</td>
+        <td style="text-align:center">${r.equipos?.estaciones_resueltas ?? 0} / ${totalEstaciones}</td>
+        <td style="text-align:center">${r.equipos?.intentos_totales ?? 0}</td>
+      </tr>`
+    }).join('')
+
+    const html = `<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<title>Resultados ${escapeRoomNombre} — ${grupo}</title>
+<style>
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:'Segoe UI',Arial,sans-serif; padding:32px; color:#1f2937; }
+  .header { display:flex; align-items:center; gap:16px; margin-bottom:24px; border-bottom:2px solid #e5e7eb; padding-bottom:16px; }
+  h1 { font-size:22px; font-weight:800; color:#1e3a8a; }
+  .meta { font-size:12px; color:#6b7280; margin-top:2px; }
+  .gbadge { display:inline-block; background:#dbeafe; color:#1d4ed8; font-size:11px; font-weight:700; padding:2px 10px; border-radius:999px; margin-left:6px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px; }
+  thead tr { background:#1e3a8a; color:#fff; }
+  th { padding:10px 14px; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.05em; }
+  td { padding:9px 14px; border-bottom:1px solid #f3f4f6; }
+  .gold td { background:#fef9c3; font-weight:600; }
+  .even td { background:#f9fafb; }
+  .badge { background:#ede9fe; color:#5b21b6; padding:2px 10px; border-radius:999px; font-weight:700; font-size:12px; }
+  .footer { margin-top:24px; text-align:center; font-size:11px; color:#9ca3af; }
+</style></head>
+<body>
+  <div class="header">
+    <span style="font-size:36px">🔐</span>
+    <div>
+      <h1>${escapeRoomNombre}${grupo !== 'Todos' ? ` <span class="gbadge">${grupo}</span>` : ''}</h1>
+      <p class="meta">${fmtFecha(sesionCreatedAt)} &nbsp;·&nbsp; ${filtrados.length} participante${filtrados.length !== 1 ? 's' : ''}</p>
+    </div>
+  </div>
+  <table>
+    <thead><tr><th>#</th><th>Alumno / Equipo</th><th>Puntos</th><th>Tiempo</th><th>Estaciones</th><th>Intentos</th></tr></thead>
+    <tbody>${filas}</tbody>
+  </table>
+  <div class="footer">Generado el ${new Date().toLocaleDateString('es-MX', { year:'numeric', month:'long', day:'numeric' })}</div>
+</body></html>`
+
+    const w = window.open('', '_blank', 'width=900,height=650')
+    if (!w) { alert('Permite ventanas emergentes para generar el PDF.'); return }
+    w.document.write(html)
+    w.document.close()
+    w.focus()
+    setTimeout(() => w.print(), 400)
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
-        <div className="bg-red-100 rounded-full w-14 h-14 flex items-center justify-center mx-auto mb-4">
-          <AlertTriangle className="w-7 h-7 text-red-500" />
-        </div>
-        <h2 className="text-lg font-bold text-gray-800 mb-2">¿Finalizar sesión?</h2>
-        <p className="text-sm text-gray-500 mb-6">
-          Se detendrá el juego para todos los equipos y no podrá reactivarse.
-        </p>
-        <div className="flex gap-3">
-          <button onClick={onCancelar}
-            className="flex-1 border border-gray-200 text-gray-600 hover:bg-gray-50 py-2.5 rounded-xl text-sm font-medium transition">
-            Cancelar
-          </button>
-          <button onClick={onConfirmar} disabled={cargando}
-            className="flex-1 bg-red-500 hover:bg-red-400 disabled:bg-gray-300 text-white py-2.5 rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2">
-            {cargando ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Flag className="w-4 h-4" />}
-            Finalizar
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 flex flex-col gap-5 max-h-[90vh] overflow-y-auto">
+        {/* Cabecera */}
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-gray-800">Finalizar sesión</h2>
+            <p className="text-sm text-gray-500 mt-0.5">Descarga los resultados antes de cerrar.</p>
+          </div>
+          <button onClick={onCancelar} className="text-gray-400 hover:text-gray-600 transition mt-0.5">
+            <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Descarga por grupo */}
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+            <FileText className="w-3.5 h-3.5" /> Descargar PDF por grupo
+          </p>
+          {loadingRes ? (
+            <div className="flex items-center gap-2 text-sm text-gray-400 py-2">
+              <RefreshCw className="w-4 h-4 animate-spin" /> Cargando resultados...
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              {GRUPOS_PDF.map((g) => {
+                const count = g === 'Todos'
+                  ? resultados.length
+                  : resultados.filter((r) => extraerGrupo(r.equipos?.nombre) === g).length
+                return (
+                  <button
+                    key={g}
+                    onClick={() => generarPDF(g)}
+                    disabled={count === 0}
+                    className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border border-gray-200 hover:border-blue-400 hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed transition text-sm font-medium text-gray-700"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Download className="w-4 h-4 text-blue-500" />
+                      {g === 'Todos' ? 'Todos los grupos' : `Grupo ${g}`}
+                    </span>
+                    <span className="text-xs text-gray-400">{count}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Mini ranking */}
+        {!loadingRes && resultados.length > 0 && (
+          <div className="bg-gray-50 rounded-xl p-3 space-y-1.5">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1 mb-2">
+              <Trophy className="w-3.5 h-3.5" /> Top 3
+            </p>
+            {resultados.slice(0, 3).map((r, i) => (
+              <div key={r.id} className="flex items-center gap-2 text-sm">
+                <span className="text-base w-6 text-center">{['🥇','🥈','🥉'][i]}</span>
+                <span className="flex-1 font-medium text-gray-700 truncate">{r.equipos?.nombre ?? '—'}</span>
+                <span className="text-violet-600 font-bold text-xs">{r.puntos_total} pts</span>
+                <span className="text-gray-400 text-xs tabular-nums">{fmtTiempo(r.tiempo_total)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Botones acción */}
+        {confirmando ? (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
+            <p className="text-sm font-semibold text-red-700 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4" /> ¿Confirmas cerrar la sesión?
+            </p>
+            <p className="text-xs text-red-500">Se detendrá el juego para todos los equipos y no podrá reactivarse.</p>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmando(false)}
+                className="flex-1 border border-gray-200 text-gray-600 hover:bg-gray-50 py-2 rounded-xl text-sm font-medium transition">
+                Cancelar
+              </button>
+              <button onClick={onConfirmar} disabled={cargando}
+                className="flex-1 bg-red-500 hover:bg-red-400 disabled:bg-gray-300 text-white py-2 rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2">
+                {cargando ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Flag className="w-4 h-4" />}
+                Sí, finalizar
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button onClick={() => setConfirmando(true)}
+            className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2">
+            <Flag className="w-4 h-4" /> Finalizar sesión
+          </button>
+        )}
       </div>
     </div>
   )
@@ -112,12 +273,22 @@ function ModalFinalizar({ onConfirmar, onCancelar, cargando }) {
 
 // ─── Tarjeta equipo ───────────────────────────────────────────
 function TarjetaEquipo({ equipo, totalEstaciones, tiempoInicio, onPista }) {
-  const segTranscurridos = tiempoInicio
-    ? Math.floor((Date.now() - new Date(tiempoInicio).getTime()) / 1000)
-    : 0
-
   const pct = totalEstaciones > 0 ? equipo.estaciones_resueltas / totalEstaciones : 0
-  const colorBarra = pct >= 1 ? 'bg-green-500' : pct >= 0.5 ? 'bg-blue-500' : 'bg-amber-400'
+  const terminado = pct >= 1
+  const colorBarra = terminado ? 'bg-green-500' : pct >= 0.5 ? 'bg-blue-500' : 'bg-amber-400'
+
+  const calcSeg = () =>
+    tiempoInicio
+      ? Math.floor((Date.now() - new Date(tiempoInicio).getTime()) / 1000)
+      : 0
+
+  // Congelar el tiempo en el momento exacto que el equipo termina
+  const [segFinal, setSegFinal] = useState(terminado ? calcSeg() : null)
+  useEffect(() => {
+    if (terminado && segFinal === null) setSegFinal(calcSeg())
+  }, [terminado]) // eslint-disable-line
+
+  const segTranscurridos = terminado && segFinal !== null ? segFinal : calcSeg()
 
   return (
     <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm hover:shadow-md transition flex flex-col gap-3">
@@ -453,6 +624,10 @@ export default function Monitor() {
       {/* Modal finalizar */}
       {mostrarFinalizar && (
         <ModalFinalizar
+          sesionId={sesionId}
+          escapeRoomNombre={escapeRoom?.nombre ?? 'Escape Room'}
+          sesionCreatedAt={sesion?.created_at}
+          totalEstaciones={escapeRoom?.num_estaciones ?? 0}
           onConfirmar={finalizarSesion}
           onCancelar={() => setMostrarFinalizar(false)}
           cargando={finalizando}
