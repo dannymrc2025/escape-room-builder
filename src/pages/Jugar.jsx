@@ -319,15 +319,20 @@ function PantallaHistoria({ historia, nombreRoom, onComenzar, portadaUrl }) {
   const [texto, setTexto] = useState('')
   const [listo, setListo] = useState(false)
 
+  const saltar = () => { setTexto(historia ?? ''); setListo(true) }
+
   useEffect(() => {
     if (!historia) { setTexto(''); setListo(true); return }
+    // Escribir en chunks de 4 letras cada 50ms → mucho menos re-renders en móvil
     let i = 0
     setTexto('')
+    setListo(false)
+    const CHUNK = 4
     const iv = setInterval(() => {
-      i++
+      i = Math.min(i + CHUNK, historia.length)
       setTexto(historia.slice(0, i))
       if (i >= historia.length) { clearInterval(iv); setListo(true) }
-    }, 30)
+    }, 50)
     return () => clearInterval(iv)
   }, [historia])
 
@@ -362,12 +367,15 @@ function PantallaHistoria({ historia, nombreRoom, onComenzar, portadaUrl }) {
               <ChevronRight className="w-5 h-5" /> ¡Comenzar la misión!
             </button>
           ) : (
-            <button
-              onClick={() => { setTexto(historia ?? ''); setListo(true) }}
-              className="text-sm text-gray-600 hover:text-gray-400 transition underline"
-            >
-              Saltar introducción
-            </button>
+            <>
+              <button
+                onClick={saltar}
+                className="w-full bg-violet-600/60 hover:bg-violet-600 text-white font-bold py-4 rounded-xl transition text-lg flex items-center justify-center gap-2"
+              >
+                <ChevronRight className="w-5 h-5" /> Saltar introducción
+              </button>
+              <p className="text-xs text-gray-500">La historia se está mostrando...</p>
+            </>
           )}
         </div>
       </div>
