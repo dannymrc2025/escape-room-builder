@@ -314,27 +314,38 @@ function PantallaEntrada({ estadoInicial, onUnirse }) {
   )
 }
 
-// ─── Pantalla 2: Historia ──────────────────────────────────────
 function PantallaHistoria({ historia, nombreRoom, onComenzar, portadaUrl }) {
-  const [texto, setTexto] = useState('')
-  const [listo, setListo] = useState(false)
-
-  const saltar = () => { setTexto(historia ?? ''); setListo(true) }
-
-  useEffect(() => {
-    if (!historia) { setTexto(''); setListo(true); return }
-    // Escribir en chunks de 4 letras cada 50ms → mucho menos re-renders en móvil
-    let i = 0
-    setTexto('')
-    setListo(false)
-    const CHUNK = 4
-    const iv = setInterval(() => {
-      i = Math.min(i + CHUNK, historia.length)
-      setTexto(historia.slice(0, i))
-      if (i >= historia.length) { clearInterval(iv); setListo(true) }
-    }, 50)
-    return () => clearInterval(iv)
-  }, [historia])
+  return (
+    <div className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden">
+      {portadaUrl
+        ? <>
+            <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${portadaUrl})` }} />
+            <div className="absolute inset-0 bg-gray-950/80" />
+          </>
+        : <div className="absolute inset-0 bg-gradient-to-br from-gray-950 via-gray-900 to-violet-950" />
+      }
+      <div className="relative z-10 w-full max-w-lg text-center">
+        <div className="inline-flex bg-violet-500/20 border border-violet-400/30 rounded-full p-4 mb-5">
+          <Lock className="w-10 h-10 text-violet-300" />
+        </div>
+        <h1 className="text-2xl font-extrabold text-white mb-6">{nombreRoom}</h1>
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-6 text-left min-h-[160px]">
+          <p className="text-gray-200 text-base leading-relaxed whitespace-pre-line">
+            {historia}
+          </p>
+        </div>
+        <div className="flex flex-col items-center gap-3">
+          <button
+            onClick={onComenzar}
+            className="w-full bg-violet-600 hover:bg-violet-500 text-white font-bold py-4 rounded-xl transition text-lg flex items-center justify-center gap-2 shadow-lg shadow-violet-500/20"
+          >
+            <ChevronRight className="w-5 h-5" /> ¡Comenzar la misión!
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden">
